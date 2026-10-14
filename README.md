@@ -56,11 +56,33 @@ For EURC, cirBTC and WETH you can instead untick "I sign the mint myself". Circl
 ## Safety features
 
 - **On-chain contract checks before every transfer.** For USDC it checks `TokenMessengerV2.localMinter()`. For the other tokens it checks `CrossChainTokenService.resolveTokenManager()` and `resolveTokenAddress()` against the addresses in the code.
-- **Recipient allowlist.** The recipient is either the connected wallet or an address from your own address book, which is stored only in your browser. The page has no free-text recipient field, which protects against address poisoning (look-alike addresses planted in your transaction history).
+- **Recipient allowlist.** The recipient is either the connected wallet or an address from your own address book, which is stored only in your browser. There is no free-text recipient field, which protects against address poisoning (look-alike addresses planted in your transaction history).
+- **Address book hardening.**
+  - Entries are re-validated every time the page loads.
+  - Labels are plain words only, so a label cannot pretend to be an address or "This wallet".
+  - Token and Circle contract addresses are refused as recipients.
+- **Extra confirmation for other addresses.** Before funds go to an address other than the connected wallet, the page shows the full address in a confirmation dialog. It also warns if that address is a smart contract on the destination network.
+- **One action at a time.** All buttons are locked while a transaction is pending, so a double click cannot send twice.
 - **Exact approvals.** The page never asks for an unlimited allowance.
-- **Fresh quote right before sending.** Circle's fee quotes expire after a few blocks. The page refuses to send if the fee jumped by more than 50%.
-- **Gas reserve on Arc.** USDC is the gas token on Arc, so 1 USDC always stays behind.
+- **Fee guards.**
+  - A Circle USDC fee above 0.2% is refused.
+  - For EURC, cirBTC and WETH the page fetches a fresh quote right before sending. It refuses a fee that jumped by more than 50%, and asks for confirmation above a small threshold.
+  - Each quote is used only once.
+- **Safe resume.** "Finish a pending transfer" checks with Circle that the transfer really goes from and to the networks of the selected route before switching networks. It stops after 2 minutes if Circle does not know the hash.
+- **Gas reserve on Arc.** USDC is the gas token on Arc, so 1 USDC always stays behind. This is checked again right before sending.
+- **Strict Content-Security-Policy.**
+  - No inline scripts.
+  - Scripts load only from this folder and the pinned library.
+  - Network requests can go only to Circle's API and the three public RPC endpoints.
+  - Wallet extensions such as Rabby and MetaMask still work.
 - **Pinned library.** ethers.js 6.13.2 is pinned with a Subresource Integrity hash.
+- **No embedding.** The page refuses to run inside a frame of another site (clickjacking).
+
+### Good practice
+
+- Run it from a clone of this repository, not from a copy hosted by someone else. A modified copy could send funds anywhere.
+- Smart contract wallets (for example a Safe) can have a different address, or no deployment at all, on another network. Bridge to them only if you know the address exists on the destination.
+- Read what your wallet shows before signing: the contract, the amount and, for the transfer, the value of the native fee.
 
 ## Fees
 
@@ -102,9 +124,19 @@ Official references: [Circle CCTP docs](https://developers.circle.com/cctp), [CC
 - **The wallet shows "Value diff −100%"** for tokens it has no price for, such as some BTC wrappers. Check the token address instead.
 - **A cached old version of the page:** reload with Ctrl+Shift+R.
 
+## Files
+
+- `index.html`: the page with its Content-Security-Policy.
+- `app.js`: all the logic.
+- `style.css`: the styles.
+
 ## Adding a route
 
-Routes live in the `ROUTES` object in `index.html`. A USDC route needs only the two chains (`usdcRoute(src, dst, defaultFast)`). A CCTPx route needs the token's `tokenId`, its TokenManager and the token addresses on both chains. You can list the token IDs from Circle's API (`GET https://iris-api.circle.com/v2/cctpx/tokens`). Check every new route with a small amount first.
+Routes live in the `ROUTES` object in `app.js`. A USDC route needs only the two chains (`usdcRoute(src, dst, defaultFast)`). A CCTPx route needs the token's `tokenId`, its TokenManager and the token addresses on both chains. You can list the token IDs from Circle's API (`GET https://iris-api.circle.com/v2/cctpx/tokens`). Check every new route with a small amount first.
+
+## Reporting a security issue
+
+Open an issue on GitHub. If the issue could put funds at risk, describe the problem in general terms first and leave out a working exploit.
 
 ## Disclaimer
 
