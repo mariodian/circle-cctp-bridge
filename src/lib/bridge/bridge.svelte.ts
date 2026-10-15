@@ -100,12 +100,17 @@ function isAddressKey(value: string): value is `0x${string}` {
   return /^0x[0-9a-fA-F]{40}$/.test(value);
 }
 
+// `invalid` is a bad amount. `spend` is spendError. Any other note is a form message.
+type AmountReason = "invalid" | "spend";
+
+type FeeNote = { note: string; reason?: AmountReason };
+
 // Buttons and the fee skeleton are reads of this. They cannot disagree.
 // `selection` says which inputs produced `body`. Only `ready` may be sent.
 type FeeState =
-  | { phase: "idle"; note: string }
+  | ({ phase: "idle" } & FeeNote)
   | { phase: "loading" }
-  | { phase: "preview"; body: Quoted; selection: QuoteSelection; note: string }
+  | ({ phase: "preview"; body: Quoted; selection: QuoteSelection } & FeeNote)
   | { phase: "ready"; body: Quoted; selection: QuoteSelection; needsApproval: boolean };
 
 export type RecipientChoice =
@@ -123,6 +128,10 @@ class Bridge {
   resumeHash = $state("");
   balanceText = $state("");
   logText = $state("");
+  // Failures from send, approve, wrap, resume, and wallet follow. Shown under Send.
+  actionError = $state("");
+  // Address-book add and save failures. Shown in that dialog.
+  bookError = $state("");
   book = $state<AddressEntry[]>([]);
   recipientKey = $state<RecipientKey>("self");
   busy = $state(false);
@@ -169,9 +178,11 @@ class Bridge {
     const fee = this.#fee;
     return fee.phase === "ready" && !fee.needsApproval;
   });
-  feeNote = $derived.by(() => {
+  // Null when the quote has nothing to say. `reason` marks an amount-field note.
+  feeNote = $derived.by((): { text: string; reason?: AmountReason } | null => {
     const fee = this.#fee;
-    return fee.phase === "idle" || fee.phase === "preview" ? fee.note : "";
+    if ((fee.phase !== "idle" && fee.phase !== "preview") || fee.note === "") return null;
+    return fee.reason ? { text: fee.note, reason: fee.reason } : { text: fee.note };
   });
   canWrap = $derived(wraps(this.route));
   wrapOn = $derived(this.canWrap && this.me !== undefined);
@@ -190,6 +201,22 @@ class Bridge {
         this.recipientKey;
         this.me;
         this.#invalidateQuote();
+      });
+      // Dismiss a send or wallet error when the form changes. `me` is left out so a
+      // failed wallet follow can publish the error after it clears the session.
+      // The first run is the subscription, not a user edit.
+      let formReady = false;
+      $effect(() => {
+        this.routeKey;
+        this.amount;
+        this.fast;
+        this.selfMint;
+        this.recipientKey;
+        if (!formReady) {
+          formReady = true;
+          return;
+        }
+        this.actionError = "";
       });
     });
     import.meta.hot?.dispose(() => {
@@ -229,14 +256,15 @@ class Bridge {
     if (this.busy) return false;
     const result = validEntry({ label, address: address.trim() }, lib().getAddress);
     if (!result.ok) {
-      this.log("ERROR: " + result.error);
+      this.bookError = result.error;
       return false;
     }
     const entry = result.entry;
     if (this.book.some((e) => e.address.toLowerCase() === entry.address.toLowerCase())) {
-      this.log("This address is already in the address book.");
+      this.bookError = "This address is already in the address book.";
       return false;
     }
+    this.bookError = "";
     this.book.push(entry);
     this.#saveBook();
     this.log(`Added to the address book: ${entry.label} — ${entry.address}`);
@@ -354,7 +382,8 @@ class Bridge {
         intent.amount,
         await this.#tokenBalance(intent.route.src.token)
       );
-      if (why) throw new Error(why);
+      // The quote reload shows this under the amount field. It is not an action error.
+      if (why) return;
       await confirmRecipient(this.#deps(), intent.route, intent.to);
       await sendAndWatch(this.#deps(), intent, quoted, {
         onQuote: (body) => {
@@ -421,7 +450,7 @@ class Bridge {
     this.#bumpQuote();
     const parsed = this.#tryAmount();
     if (!parsed.ok) {
-      this.#fee = { phase: "idle", note: "Enter a valid amount." };
+      this.#fee = { phase: "idle", note: "Enter a valid amount.", reason: "invalid" };
       return;
     }
     if (parsed.amount <= 0n) {
@@ -513,7 +542,13 @@ class Bridge {
       if (seq !== this.#feeSeq || this.busy) return;
       const selection = this.#selection(amount, to.address);
       if (why) {
-        this.#commit(seq, { phase: "preview", body: next, selection, note: why });
+        this.#commit(seq, {
+          phase: "preview",
+          body: next,
+          selection,
+          note: why,
+          reason: "spend"
+        });
         return;
       }
       const allowance = await erc20(r.src.token, this.#provider).allowance(this.me, r.tokenManager);
@@ -553,10 +588,10 @@ class Bridge {
     if (!Array.isArray(raw)) return [];
     const parsed = raw.map((e) => validEntry(e, lib().getAddress));
     const ok = parsed.flatMap((e) => (e.ok ? [e.entry] : []));
-    if (ok.length !== raw.length)
-      this.log(
-        `Ignored ${raw.length - ok.length} invalid address book entr${raw.length - ok.length === 1 ? "y" : "ies"}.`
-      );
+    if (ok.length !== raw.length) {
+      const n = raw.length - ok.length;
+      this.log(`Ignored ${n} invalid address book entr${n === 1 ? "y" : "ies"}.`);
+    }
     return ok;
   }
 
@@ -564,7 +599,7 @@ class Bridge {
     try {
       localStorage.setItem(AB_KEY, JSON.stringify(this.book));
     } catch {
-      this.log("Could not save the address book in this browser.");
+      this.bookError = "Could not save the address book in this browser.";
     }
   }
 
@@ -729,7 +764,7 @@ class Bridge {
     } catch (e) {
       if (live !== this.#live || this.busy) return;
       this.#clearSession();
-      this.log("ERROR: " + errorText(e));
+      this.actionError = errorText(e);
     }
   }
 
@@ -910,13 +945,14 @@ class Bridge {
   async #run(fn: () => Promise<void>): Promise<void> {
     if (this.busy) return;
     this.busy = true;
+    this.actionError = "";
     // Drop a background wallet read and sendable quote state before the first await.
     this.#live += 1;
     this.#invalidateQuote();
     try {
       await fn();
     } catch (e) {
-      this.log("ERROR: " + errorText(e));
+      this.actionError = errorText(e);
     } finally {
       this.busy = false;
       this.#invalidateQuote();

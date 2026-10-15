@@ -8,11 +8,14 @@
   import { Switch } from "$lib/components/ui/switch/index.js";
   import { bridge } from "$lib/bridge/bridge.svelte.js";
   import { CHAINS, reverseRoute } from "$lib/cctp/logic.js";
+  import ErrorAlert from "$lib/components/ErrorAlert.svelte";
   import QuoteSummary from "./QuoteSummary.svelte";
   import RecipientDialog from "./RecipientDialog.svelte";
   import RouteDialog from "./RouteDialog.svelte";
 
   const swapped = $derived(reverseRoute(bridge.routeKey));
+  const amountError = $derived(bridge.feeNote?.reason ? bridge.feeNote.text : "");
+  const formError = $derived(bridge.feeNote && !bridge.feeNote.reason ? bridge.feeNote.text : "");
 </script>
 
 <Card.Root>
@@ -49,6 +52,7 @@
         />
         <span class="text-muted-foreground pb-2 text-2xl" id="sym">{bridge.route.symbol}</span>
       </div>
+      <ErrorAlert text={amountError} class="mt-3" />
       <p class="text-muted-foreground mt-2 text-sm">
         {bridge.balanceText ||
           `You have no ${bridge.route.symbol} balance loaded on ${CHAINS[bridge.route.src.chainId].name}`}
@@ -100,11 +104,15 @@
         onclick={() => bridge.approve()}>Approve</Button
       >
     </div>
-    <Button
-      id="send"
-      class="h-12 w-full text-base"
-      disabled={bridge.busy || !bridge.sendOn}
-      onclick={() => bridge.send()}>Send</Button
-    >
+    <div class="flex flex-col gap-3">
+      <Button
+        id="send"
+        class="h-12 w-full text-base"
+        disabled={bridge.busy || !bridge.sendOn}
+        onclick={() => bridge.send()}>Send</Button
+      >
+      <ErrorAlert text={formError} />
+      <ErrorAlert text={bridge.actionError} />
+    </div>
   </Card.Content>
 </Card.Root>

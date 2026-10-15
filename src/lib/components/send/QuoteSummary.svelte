@@ -42,7 +42,3 @@
     {/if}
   </dd>
 </dl>
-
-{#if bridge.feeNote}
-  <p class="text-sm">{bridge.feeNote}</p>
-{/if}

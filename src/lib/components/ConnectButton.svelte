@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button, buttonVariants } from "$lib/components/ui/button/index.js";
   import * as Dialog from "$lib/components/ui/dialog/index.js";
+  import ErrorAlert from "$lib/components/ErrorAlert.svelte";
   import { bridge } from "$lib/bridge/bridge.svelte.js";
   import { shortAddress } from "$lib/format.js";
 
@@ -46,7 +47,7 @@
         Disconnect
       </Button>
       {#if bridge.holdings.phase === "error"}
-        <p class="text-muted-foreground">Balance unavailable on this network.</p>
+        <ErrorAlert text="Balance unavailable on this network." />
       {:else if bridge.holdings.phase === "ready"}
         {@const rows = bridge.holdings.rows.filter(
           (row) => row.kind === "native" || row.raw !== 0n

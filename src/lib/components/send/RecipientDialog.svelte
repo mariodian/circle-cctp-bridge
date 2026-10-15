@@ -4,6 +4,7 @@
   import * as Dialog from "$lib/components/ui/dialog/index.js";
   import { Input } from "$lib/components/ui/input/index.js";
   import { Separator } from "$lib/components/ui/separator/index.js";
+  import ErrorAlert from "$lib/components/ErrorAlert.svelte";
   import { bridge } from "$lib/bridge/bridge.svelte.js";
   import { shortAddress } from "$lib/format.js";
 
@@ -111,6 +112,7 @@
           disabled={bridge.busy}
         />
         <Button id="abAdd" variant="secondary" disabled={bridge.busy} onclick={add}>Add</Button>
+        <ErrorAlert text={bridge.bookError} />
         <div id="abList" class="flex flex-col gap-2">
           {#each bridge.book as entry, i (entry.address)}
             <div class="flex items-center gap-2">
