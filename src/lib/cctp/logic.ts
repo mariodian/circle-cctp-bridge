@@ -88,7 +88,7 @@ export const CHAINS: Record<ChainId, Chain> = {
   }
 };
 
-function isChainId(id: number): id is ChainId {
+export function isChainId(id: number): id is ChainId {
   return Object.prototype.hasOwnProperty.call(CHAINS, id);
 }
 
@@ -218,6 +218,25 @@ export const ROUTES = {
 } satisfies Record<string, Route>;
 
 export type RouteKey = keyof typeof ROUTES;
+
+export type ChainAsset = { symbol: string; token: string; decimals: number };
+
+// One row per token contract this app moves on the chain, either side of a route.
+export function assetsOn(chainId: ChainId): ChainAsset[] {
+  const seen = new Set<string>();
+  const rows: ChainAsset[] = [];
+  for (const route of Object.values(ROUTES)) {
+    for (const side of ["src", "dst"] as const) {
+      const end = route[side];
+      if (end.chainId !== chainId) continue;
+      const key = end.token.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ symbol: route.symbol, token: end.token, decimals: route.decimals });
+    }
+  }
+  return rows;
+}
 
 // Symbols that already have a route on this side of the chain, in route-table order.
 export function symbolsOn(side: "src" | "dst", chainId: ChainId): string[] {

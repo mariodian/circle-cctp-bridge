@@ -31,6 +31,8 @@ import {
   routeLabel,
   routeMatching,
   routeTime,
+  assetsOn,
+  isChainId,
   symbolsOn,
   selfMintLocked,
   spendError,
@@ -255,6 +257,10 @@ test("editing one side keeps the other endpoint when that pair exists", () => {
   expect(symbolsOn("src", 1)).toEqual(["USDC", "cirBTC", "WETH"]);
   expect(symbolsOn("src", 43114)).toEqual(["USDC"]);
   expect(symbolsOn("dst", 43114)).toEqual([]);
+  expect(isChainId(1)).toBe(true);
+  expect(isChainId(999)).toBe(false);
+  expect(assetsOn(43114).map((asset) => asset.symbol)).toEqual(["USDC"]);
+  expect(assetsOn(1).map((asset) => asset.symbol)).toEqual(["USDC", "EURC", "cirBTC", "WETH"]);
   expect(routeMatching("usdc_eth_arc", "src", 43114, "USDC")).toBe("usdc_av_arc");
   expect(routeMatching("usdc_av_eth", "src", 1, "USDC")).toBe("usdc_eth_arc");
   expect(routeMatching("usdc_eth_arc", "src", 1, "WETH")).toBe("weth_eth_arc");

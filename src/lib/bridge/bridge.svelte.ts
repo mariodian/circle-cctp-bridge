@@ -4,8 +4,10 @@ import {
   ROUTES,
   WRAP_MAX_RESERVE,
   WRAP_MIN_LEFT,
+  assetsOn,
   fastAllowed,
   fastLabel,
+  isChainId,
   isTxHash,
   maxFillReserve,
   maxFillSuffix,
@@ -51,6 +53,48 @@ const fillable = (bal: bigint, reserve: bigint): bigint => (bal > reserve ? bal 
 
 export type RecipientKey = "self" | `0x${string}`;
 
+export type Holding = {
+  id: string;
+  kind: "native" | "token";
+  symbol: string;
+  amount: string;
+};
+
+export type Holdings =
+  | { phase: "idle" }
+  | { phase: "loading" }
+  | { phase: "error" }
+  | { phase: "ready"; native: string; rows: Holding[] };
+
+type WalletEvents = {
+  on: (event: string, cb: (accounts: unknown) => void) => void;
+  removeListener: (event: string, cb: (accounts: unknown) => void) => void;
+};
+
+type WalletSession = {
+  provider: BrowserProvider;
+  signer: JsonRpcSigner;
+  account: string;
+  chainId: number;
+};
+
+type AmountFill = "always" | "ifEmpty" | "keep";
+
+function walletEvents(eth: Eip1193Provider): WalletEvents | undefined {
+  if (!("on" in eth) || typeof eth.on !== "function") return undefined;
+  if (!("removeListener" in eth) || typeof eth.removeListener !== "function") return undefined;
+  return eth as Eip1193Provider & WalletEvents;
+}
+
+function accountList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return undefined;
+  return value;
+}
+
+function sessionKey(session: WalletSession): string {
+  return `${session.account.toLowerCase()}:${session.chainId}`;
+}
+
 function isAddressKey(value: string): value is `0x${string}` {
   return /^0x[0-9a-fA-F]{40}$/.test(value);
 }
@@ -81,17 +125,31 @@ class Bridge {
   book = $state<AddressEntry[]>([]);
   recipientKey = $state<RecipientKey>("self");
   busy = $state(false);
+  holdings = $state<Holdings>({ phase: "idle" });
   #me = $state<string | undefined>();
+  #chainId = $state<number | undefined>();
 
   #provider: BrowserProvider | undefined;
   #signer: JsonRpcSigner | undefined;
   #offWallet: (() => void) | undefined;
+  // Bumped on disconnect and at the start of every background wallet read.
+  // A read publishes only when it still owns this value.
+  #live = 0;
+  // Account or chain changed during #run. Follow the wallet once busy clears.
+  #resync = false;
+  #holdingsFor: string | undefined;
+  #holdingsLive = 0;
   // Displayed quote. #invalidateQuote owns every exit. #commit publishes a fetch. Send replaces body only.
   #fee = $state<FeeState>({ phase: "idle", note: "" });
   #feeTimer: ReturnType<typeof setTimeout> | undefined;
   #feeSeq = 0;
 
   me = $derived(this.#me);
+  networkName = $derived.by(() => {
+    const id = this.#chainId;
+    if (id === undefined) return "";
+    return isChainId(id) ? CHAINS[id].name : `Chain ${id}`;
+  });
   route = $derived(ROUTES[this.routeKey]);
   recipient = $derived.by((): RecipientChoice => this.#choice());
   shownQuote = $derived.by(() => this.#shown());
@@ -158,8 +216,7 @@ class Bridge {
     if (!this.me) return;
     void this.#run(async () => {
       await this.#ensureChain(this.route.src.chainId);
-      await verifyRoute(this.route, this.#wallet().provider);
-      await this.#refreshBalances();
+      await this.#matchRoute(this.#live, "keep");
     });
   }
 
@@ -189,17 +246,35 @@ class Bridge {
     if (removed && this.recipientKey === removed.address) this.recipientKey = "self";
   }
 
+  async disconnect(): Promise<void> {
+    if (this.busy) return;
+    const eth = window.ethereum;
+    if (eth) {
+      try {
+        await eth.request({
+          method: "wallet_revokePermissions",
+          params: [{ eth_accounts: {} }]
+        });
+      } catch {
+        // Wallets without revoke still drop the page session below.
+      }
+    }
+    this.#clearSession();
+  }
+
   async connect(): Promise<void> {
     await this.#run(async () => {
       const eth = this.#ethereum();
+      this.#listen(eth);
       const r = this.route;
       await eth.request({ method: "eth_requestAccounts" });
       await this.#ensureChain(r.src.chainId);
-      const { provider: p, me: who } = this.#wallet();
-      await verifyRoute(r, p);
-      const bal = await this.#refreshBalances();
-      this.amount = lib().formatUnits(fillable(bal, maxFillReserve(r)), r.decimals);
-      this.log(`Connected on ${CHAINS[r.src.chainId].name} as ${who}. Circle contracts verified.`);
+      const live = this.#live;
+      await this.#matchRoute(live, "always");
+      if (live !== this.#live) return;
+      this.log(
+        `Connected on ${CHAINS[r.src.chainId].name} as ${this.#wallet().me}. Circle contracts verified.`
+      );
     });
   }
 
@@ -500,99 +575,138 @@ class Bridge {
 
   // Silent restore. eth_accounts returns an already-approved account and does not prompt.
   async #restore(): Promise<void> {
-    const eth = window.ethereum;
-    if (!eth) return;
-    this.#listen(eth);
-    try {
-      const accounts = await eth.request({ method: "eth_accounts" });
-      if (this.busy || this.me) return;
-      if (!Array.isArray(accounts) || accounts.length === 0) return;
-      await this.#adopt(eth);
-    } catch (e) {
-      if (this.busy) return;
-      this.#clearSession();
-      this.log("ERROR: " + errorText(e));
-    }
+    if (!window.ethereum) return;
+    this.#listen(window.ethereum);
+    await this.#followWallet();
   }
 
   #listen(eth: Eip1193Provider): void {
     if (this.#offWallet) return;
-    const withEvents = eth as Eip1193Provider & {
-      on?: (event: string, cb: (...args: unknown[]) => void) => void;
-      removeListener?: (event: string, cb: (...args: unknown[]) => void) => void;
-    };
-    if (!withEvents.on || !withEvents.removeListener) return;
-    const onAccounts = (accounts: unknown) => {
-      void this.#onAccounts(accounts);
+    const events = walletEvents(eth);
+    if (!events) return;
+    const onAccounts = (value: unknown) => {
+      const accounts = accountList(value);
+      if (!accounts) return;
+      this.#onAccounts(accounts);
     };
     const onChain = () => {
-      void this.#onChain();
+      this.#onChain();
     };
-    withEvents.on("accountsChanged", onAccounts);
-    withEvents.on("chainChanged", onChain);
+    events.on("accountsChanged", onAccounts);
+    events.on("chainChanged", onChain);
     this.#offWallet = () => {
-      withEvents.removeListener?.("accountsChanged", onAccounts);
-      withEvents.removeListener?.("chainChanged", onChain);
+      events.removeListener("accountsChanged", onAccounts);
+      events.removeListener("chainChanged", onChain);
     };
+  }
+
+  #onAccounts(accounts: string[]): void {
+    if (this.busy) {
+      this.#resync = true;
+      return;
+    }
+    if (accounts.length === 0 || !window.ethereum) {
+      this.#clearSession();
+      return;
+    }
+    void this.#followWallet();
+  }
+
+  #onChain(): void {
+    if (!this.me) return;
+    if (this.busy) {
+      this.#resync = true;
+      return;
+    }
+    void this.#followWallet();
   }
 
   #clearSession(): void {
+    this.#live += 1;
     this.#me = undefined;
+    this.#chainId = undefined;
     this.#provider = undefined;
     this.#signer = undefined;
     this.balanceText = "";
+    this.holdings = { phase: "idle" };
+    this.#holdingsFor = undefined;
+    this.#holdingsLive = 0;
   }
 
-  // Attach the current injected session. Never switches chain.
-  async #adopt(eth: Eip1193Provider): Promise<void> {
-    if (this.busy) return;
+  // Reads the injected wallet and writes nothing.
+  async #readWallet(eth: Eip1193Provider): Promise<WalletSession> {
     const provider = new (lib().BrowserProvider)(eth);
     const net = await provider.getNetwork();
-    if (this.busy) return;
     const signer = await provider.getSigner();
-    const who = await signer.getAddress();
-    if (this.busy) return;
-    this.#provider = provider;
-    this.#signer = signer;
-    this.#me = who;
-    if (Number(net.chainId) !== this.route.src.chainId) return;
-    await verifyRoute(this.route, provider);
-    if (this.busy || this.#provider !== provider) return;
+    const account = await signer.getAddress();
+    return { provider, signer, account, chainId: Number(net.chainId) };
+  }
+
+  // Only writer of the wallet session. Reloads holdings when the account or chain changes.
+  #publish(session: WalletSession): void {
+    const live = this.#live;
+    const key = sessionKey(session);
+    this.#provider = session.provider;
+    this.#signer = session.signer;
+    this.#me = session.account;
+    this.#chainId = session.chainId;
+    const same = this.#holdingsFor === key;
+    if (same && (this.#holdingsLive === live || this.holdings.phase === "ready")) {
+      this.#holdingsLive = live;
+      return;
+    }
+    this.#holdingsFor = key;
+    this.#holdingsLive = live;
+    void this.#loadPortfolio(session, live, key);
+  }
+
+  // eth_accounts first so a locked or revoked wallet does not prompt.
+  async #followWallet(): Promise<void> {
+    if (this.busy) {
+      this.#resync = true;
+      return;
+    }
+    const eth = window.ethereum;
+    if (!eth) {
+      this.#clearSession();
+      return;
+    }
+    const live = ++this.#live;
+    try {
+      const accounts = accountList(await eth.request({ method: "eth_accounts" }));
+      if (live !== this.#live || this.busy) return;
+      if (!accounts || accounts.length === 0) {
+        this.#clearSession();
+        return;
+      }
+      const session = await this.#readWallet(eth);
+      if (live !== this.#live || this.busy) return;
+      this.#publish(session);
+      await this.#matchRoute(live, "ifEmpty");
+    } catch (e) {
+      if (live !== this.#live || this.busy) return;
+      this.#clearSession();
+      this.log("ERROR: " + errorText(e));
+    }
+  }
+
+  // Route source only. `keep` leaves the typed amount alone.
+  async #matchRoute(live: number, fill: AmountFill): Promise<void> {
+    if (live !== this.#live) return;
+    if (this.#chainId !== this.route.src.chainId) {
+      this.balanceText = "";
+      return;
+    }
+    await verifyRoute(this.route, this.#wallet().provider);
+    if (live !== this.#live) return;
     const bal = await this.#refreshBalances();
-    if (this.busy || this.#provider !== provider) return;
-    if (!this.amount.trim())
+    if (live !== this.#live) return;
+    if (fill === "keep") return;
+    if (fill === "always" || !this.amount.trim())
       this.amount = lib().formatUnits(
         fillable(bal, maxFillReserve(this.route)),
         this.route.decimals
       );
-  }
-
-  async #onAccounts(accounts: unknown): Promise<void> {
-    if (this.busy) return;
-    const eth = window.ethereum;
-    if (!eth || !Array.isArray(accounts) || accounts.length === 0) {
-      this.#clearSession();
-      return;
-    }
-    try {
-      await this.#adopt(eth);
-    } catch (e) {
-      if (this.busy) return;
-      this.#clearSession();
-      this.log("ERROR: " + errorText(e));
-    }
-  }
-
-  async #onChain(): Promise<void> {
-    if (this.busy || !this.me) return;
-    const eth = window.ethereum;
-    if (!eth) return;
-    try {
-      await this.#adopt(eth);
-    } catch (e) {
-      if (this.busy) return;
-      this.log("ERROR: " + errorText(e));
-    }
   }
 
   #amountUnits(decimals = this.route.decimals): bigint {
@@ -614,12 +728,12 @@ class Bridge {
         throw e;
       }
     }
-    this.#provider = new (lib().BrowserProvider)(eth);
-    const net = await this.#provider.getNetwork();
-    if (Number(net.chainId) !== chainId)
-      throw new Error(`The wallet is not on ${c.name} (chainId ${net.chainId}).`);
-    this.#signer = await this.#provider.getSigner();
-    this.#me = await this.#signer.getAddress();
+    const live = this.#live;
+    const session = await this.#readWallet(eth);
+    if (live !== this.#live) throw new Error("The wallet changed. Try again.");
+    if (session.chainId !== chainId)
+      throw new Error(`The wallet is not on ${c.name} (chainId ${session.chainId}).`);
+    this.#publish(session);
   }
 
   async #refreshBalances(): Promise<bigint> {
@@ -630,6 +744,36 @@ class Bridge {
     const amount = lib().formatUnits(bal, r.decimals);
     this.balanceText = `You have ${amount} ${r.symbol} on ${CHAINS[r.src.chainId].name} · ${lib().formatEther(gas)} ${CHAINS[r.src.chainId].native} for gas`;
     return bal;
+  }
+
+  // Native gas plus each token this app bridges on the wallet's current chain.
+  async #loadPortfolio(session: WalletSession, live: number, key: string): Promise<void> {
+    this.holdings = { phase: "loading" };
+    try {
+      const chainId = session.chainId;
+      const known = isChainId(chainId);
+      const native = known ? CHAINS[chainId].native : "Native";
+      const assets = known ? assetsOn(chainId) : [];
+      const [gas, bals] = await Promise.all([
+        session.provider.getBalance(session.account),
+        Promise.all(
+          assets.map((asset) => erc20(asset.token, session.provider).balanceOf(session.account))
+        )
+      ]);
+      if (live !== this.#live || this.#holdingsFor !== key) return;
+      const rows: Holding[] = [
+        { id: "native", kind: "native", symbol: native, amount: lib().formatEther(gas) }
+      ];
+      assets.forEach((asset, i) => {
+        const amount = lib().formatUnits(bals[i] ?? 0n, asset.decimals);
+        if (amount === "0") return;
+        rows.push({ id: asset.token, kind: "token", symbol: asset.symbol, amount });
+      });
+      this.holdings = { phase: "ready", native, rows };
+    } catch {
+      if (live !== this.#live || this.#holdingsFor !== key) return;
+      this.holdings = { phase: "error" };
+    }
   }
 
   async #tokenBalance(token: string): Promise<bigint> {
@@ -679,7 +823,8 @@ class Bridge {
   async #run(fn: () => Promise<void>): Promise<void> {
     if (this.busy) return;
     this.busy = true;
-    // Drop sendable state before the first await. The effect does not see busy.
+    // Drop a background wallet read and sendable quote state before the first await.
+    this.#live += 1;
     this.#invalidateQuote();
     try {
       await fn();
@@ -688,6 +833,10 @@ class Bridge {
     } finally {
       this.busy = false;
       this.#invalidateQuote();
+      if (this.#resync) {
+        this.#resync = false;
+        void this.#followWallet();
+      }
     }
   }
 }
