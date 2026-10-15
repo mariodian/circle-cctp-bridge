@@ -126,6 +126,7 @@ function applyButtons(): void {
   el<HTMLInputElement>("selfMint").disabled = busy || selfMintLocked(r);
   el<HTMLInputElement>("fast").disabled = busy || !fastAllowed(r);
   el<HTMLElement>("fastLabel").textContent = fastLabel(r);
+  el<HTMLButtonElement>("wrap").hidden = !wraps(r);
   for (const b of document.querySelectorAll<HTMLButtonElement>("#abList button")) b.disabled = busy;
 }
 
