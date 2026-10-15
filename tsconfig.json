@@ -9,8 +9,12 @@
     "skipLibCheck": true,
     "noEmit": true,
     "types": ["bun"],
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": true,
+    "paths": {
+      "$lib": ["./src/lib"],
+      "$lib/*": ["./src/lib/*"]
+    }
   },
   "include": ["src", "test"],
-  "exclude": ["src/**/*.svelte", "src/**/*.svelte.ts"]
+  "exclude": ["src/**/*.svelte", "src/**/*.svelte.ts", "src/lib/components"]
 }

@@ -1,3 +1,4 @@
+import path from "node:path";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type Plugin } from "vite";
@@ -16,5 +17,10 @@ function devStylePolicy(): Plugin {
 
 export default defineConfig({
   plugins: [tailwindcss(), svelte(), devStylePolicy()],
-  base: "./"
+  base: "./",
+  resolve: {
+    alias: {
+      $lib: path.resolve("./src/lib")
+    }
+  }
 });
