@@ -1,4 +1,5 @@
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type Plugin } from "vite";
 
 // Vite serves imported CSS by writing a <style> element. The production build emits a file instead,
@@ -14,6 +15,6 @@ function devStylePolicy(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [svelte(), devStylePolicy()],
+  plugins: [tailwindcss(), svelte(), devStylePolicy()],
   base: "./"
 });

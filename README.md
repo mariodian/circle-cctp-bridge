@@ -136,7 +136,7 @@ Official references: [Circle CCTP docs](https://developers.circle.com/cctp), [CC
 - `src/logic.ts`: the route catalog and the safety checks, covered by `bun test`.
 - `src/transfer.ts`: quotes, the burn and CCTPx send, and the mint watch.
 - `src/contracts.ts`: typed contract calls.
-- `src/app.css`: the styles.
+- `src/app.css`: Tailwind entry and the color tokens.
 - `dist/`: the browser build. Git ignores it.
 
 ## Adding a route

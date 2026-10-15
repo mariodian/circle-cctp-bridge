@@ -12,11 +12,12 @@
   }
 </script>
 
-<div class="card">
-  <div class="row">
+<div class="mb-4 rounded-xl border border-line bg-card p-[18px]">
+  <div class="my-2.5">
     Route:
     <select
       id="route"
+      class="box-border max-w-full rounded-md border border-line bg-bg p-2 text-[15px] text-fg"
       disabled={bridge.busy}
       value={bridge.routeKey}
       onchange={(e) => bridge.setRoute(e.currentTarget.value)}
@@ -26,22 +27,27 @@
       {/each}
     </select>
   </div>
-  <div class="row muted" id="routeInfo">
+  <div class="my-2.5 text-sm text-muted" id="routeInfo">
     {#each bridge.lines as line, i (i)}
       <div>
         {#each line as part, j (j)}
           {#if typeof part === "string"}
             {part}
           {:else}
-            <code>{part.code}</code>
+            <code class="text-xs break-all">{part.code}</code>
           {/if}
         {/each}
       </div>
     {/each}
   </div>
-  <div class="row">
+  <div class="my-2.5">
     Recipient on the destination network:<br />
-    <select id="rcpt" disabled={bridge.busy} bind:value={bridge.recipientKey}>
+    <select
+      id="rcpt"
+      class="box-border w-full max-w-full rounded-md border border-line bg-bg p-2 font-mono text-[13px] text-fg"
+      disabled={bridge.busy}
+      bind:value={bridge.recipientKey}
+    >
       <option value="self">
         {bridge.me ? `This wallet — ${bridge.me}` : "This wallet (connect first)"}
       </option>
@@ -49,11 +55,11 @@
         <option value={entry.address}>Saved: {entry.label} — {entry.address}</option>
       {/each}
     </select>
-    <div class="row muted" id="rcptInfo">{bridge.rcptInfo}</div>
+    <div class="my-2.5 text-sm text-muted" id="rcptInfo">{bridge.rcptInfo}</div>
   </div>
-  <details class="row">
+  <details class="my-2.5">
     <summary>My other addresses (address book)</summary>
-    <p class="warn">
+    <p class="text-warn">
       Add only addresses you control. Copy them from your hardware wallet or your wallet's address
       book, never from a transaction history: scammers plant look-alike addresses there (address
       poisoning). Smart contract wallets (for example a Safe) can have a different address, or no
@@ -61,6 +67,7 @@
     </p>
     <input
       id="abAddr"
+      class="box-border w-full max-w-full rounded-md border border-line bg-bg p-2 font-mono text-[13px] text-fg"
       type="text"
       placeholder="0x…"
       autocomplete="off"
@@ -68,9 +75,10 @@
       bind:value={abAddr}
       disabled={bridge.busy}
     />
-    <div class="row">
+    <div class="my-2.5">
       <input
         id="abLabel"
+        class="box-border max-w-full rounded-md border border-line bg-bg p-2 text-[15px] text-fg"
         type="text"
         placeholder="Label, e.g. Ledger 2"
         maxlength="24"
@@ -78,27 +86,36 @@
         bind:value={abLabel}
         disabled={bridge.busy}
       />
-      <button id="abAdd" class="small" disabled={bridge.busy} onclick={add}>Add</button>
+      <button
+        id="abAdd"
+        class="my-1 mr-1 ml-0 cursor-pointer rounded-lg border-0 bg-accent px-2.5 py-1 text-[13px] text-white disabled:cursor-default disabled:opacity-45"
+        disabled={bridge.busy}
+        onclick={add}>Add</button
+      >
     </div>
     <div id="abList">
       {#each bridge.book as entry, i (entry.address)}
-        <div class="ab-item">
-          <code>{entry.label} — {entry.address}</code>
-          <button class="small" disabled={bridge.busy} onclick={() => bridge.removeEntry(i)}
-            >Remove</button
+        <div class="my-1 flex items-center gap-2 text-[13px]">
+          <code class="flex-1 text-xs break-all">{entry.label} — {entry.address}</code>
+          <button
+            class="my-1 mr-1 ml-0 cursor-pointer rounded-lg border-0 bg-accent px-2.5 py-1 text-[13px] text-white disabled:cursor-default disabled:opacity-45"
+            disabled={bridge.busy}
+            onclick={() => bridge.removeEntry(i)}>Remove</button
           >
         </div>
       {/each}
     </div>
-    <p class="muted">The address book is stored only in this browser (localStorage).</p>
+    <p class="text-sm text-muted">
+      The address book is stored only in this browser (localStorage).
+    </p>
   </details>
-  <div class="row">
+  <div class="my-2.5">
     <label>
       <input id="fast" type="checkbox" disabled={bridge.fastLocked} bind:checked={bridge.fast} />
       <span id="fastLabel">{bridge.fastText}</span>
     </label>
   </div>
-  <div class="row">
+  <div class="my-2.5">
     <label>
       <input
         id="selfMint"
