@@ -109,29 +109,39 @@ export interface Endpoint {
   token: string;
 }
 
-export interface Route {
-  kind: "usdc" | "cctpx";
-  symbol: string;
-  decimals: number;
+export interface UsdcRoute {
+  kind: "usdc";
+  symbol: "USDC";
+  decimals: 6;
   src: Endpoint;
   dst: Endpoint;
   tokenManager: string;
   defaultFast: boolean;
   defaultSelfMint: boolean;
-  tokenId?: string;
+}
+
+export interface CctpxRoute {
+  kind: "cctpx";
+  symbol: string;
+  decimals: number;
+  src: Endpoint;
+  dst: Endpoint;
+  tokenManager: string;
+  tokenId: string;
+  defaultFast: boolean;
+  defaultSelfMint: boolean;
   canWrap?: boolean;
 }
 
-export function usdcRoute(src: number, dst: number, defaultFast: boolean): Route {
-  const srcChain = chain(src);
-  const dstChain = chain(dst);
-  if (!isChainId(src) || !isChainId(dst)) throw new Error(`Unknown chain ${src}.`);
+export type Route = UsdcRoute | CctpxRoute;
+
+export function usdcRoute(src: ChainId, dst: ChainId, defaultFast: boolean): UsdcRoute {
   return {
     kind: "usdc",
     symbol: "USDC",
     decimals: 6,
-    src: { chainId: src, domain: srcChain.domain, token: USDC[src] },
-    dst: { chainId: dst, domain: dstChain.domain, token: USDC[dst] },
+    src: { chainId: src, domain: chain(src).domain, token: USDC[src] },
+    dst: { chainId: dst, domain: chain(dst).domain, token: USDC[dst] },
     tokenManager: TOKEN_MESSENGER_V2,
     defaultFast,
     defaultSelfMint: true
@@ -178,7 +188,7 @@ export const cctpxRoute = (
   src: ChainId,
   dst: ChainId,
   defaultFast: boolean
-): Route => ({
+): CctpxRoute => ({
   kind: "cctpx",
   symbol,
   decimals,
@@ -267,21 +277,16 @@ export function spendError(r: Route, amount: bigint, bal: bigint): string | null
 export const fastAllowed = (r: Route): boolean => r.kind !== "usdc" || r.src.chainId === 1;
 export const selfMintLocked = (r: Route): boolean => r.kind === "usdc";
 
-export interface ModeInput {
-  fast: boolean;
-  selfMint: boolean;
-}
-
 export interface TransferMode {
   fast: boolean;
   selfMint: boolean;
 }
 
 // Applies the checkbox values on top of the locks.
-export function transferMode(r: Route, input: ModeInput): TransferMode {
+export function transferMode(r: Route, input: TransferMode): TransferMode {
   return {
-    fast: fastAllowed(r) && !!input.fast,
-    selfMint: selfMintLocked(r) ? true : !!input.selfMint
+    fast: fastAllowed(r) && input.fast,
+    selfMint: selfMintLocked(r) ? true : input.selfMint
   };
 }
 
@@ -308,21 +313,19 @@ export interface AddressEntry {
 
 export type EntryResult = { ok: true; entry: AddressEntry } | { ok: false; error: string };
 
-export interface EntryDraft {
-  address?: unknown;
-  label?: unknown;
+function recordOf(e: unknown): Record<string, unknown> | undefined {
+  if (typeof e !== "object" || e === null || Array.isArray(e)) return undefined;
+  return e as Record<string, unknown>;
 }
 
 // One shape either way: { ok: true, entry } or { ok: false, error }.
 // Callers branch on ok. A string is never an entry, and an entry is never an error.
 // Address and label come from the address book (typed in, or read back from localStorage).
-export function validEntry(
-  e: EntryDraft | null | undefined,
-  getAddress: (address: string) => string
-): EntryResult {
+export function validEntry(e: unknown, getAddress: (address: string) => string): EntryResult {
+  const fields = recordOf(e);
   let address: string;
   try {
-    address = getAddress(String(e && e.address));
+    address = getAddress(String(fields && fields.address));
   } catch {
     return { ok: false, error: "not a valid address (check the checksum)." };
   }
@@ -331,7 +334,7 @@ export function validEntry(
       ok: false,
       error: "this is a token or Circle contract, not a wallet. Tokens sent there are lost."
     };
-  const label = cleanLabel(e && e.label);
+  const label = cleanLabel(fields && fields.label);
   if (badLabel(label))
     return {
       ok: false,
@@ -361,7 +364,7 @@ export function feeNeedsConfirm(chainId: number, fee: bigint): boolean {
 }
 
 export interface QuoteSelection {
-  key: string;
+  key: RouteKey;
   amount: bigint;
   to: string;
   fast: boolean;
@@ -380,4 +383,154 @@ export function quoteStillMatches(
     quotedFor.fast === next.fast &&
     quotedFor.selfMint === next.selfMint
   );
+}
+
+export interface QuoteExpiry {
+  mode?: string;
+  expiresAtBlock?: number;
+  expiresAt?: number;
+}
+
+export interface UsdcQuote {
+  kind: "usdc";
+  maxFee: bigint;
+}
+
+export interface CctpxQuote {
+  kind: "cctpx";
+  fee: bigint;
+  signedQuote: string;
+  expiry?: QuoteExpiry;
+}
+
+export type Quoted = UsdcQuote | CctpxQuote;
+
+export const isTxHash = (s: string): boolean => /^0x[0-9a-fA-F]{64}$/.test(s);
+
+function isFeeTier(
+  t: unknown,
+  threshold: number
+): t is { finalityThreshold: unknown; minimumFee?: unknown } {
+  return (
+    typeof t === "object" &&
+    t !== null &&
+    "finalityThreshold" in t &&
+    t.finalityThreshold === threshold
+  );
+}
+
+// Circle's burn fee response is an array of tiers. The matching tier's minimumFee is bps.
+export function usdcQuote(amount: bigint, tiers: unknown, fast: boolean): UsdcQuote {
+  const tier = Array.isArray(tiers) ? tiers.find((t) => isFeeTier(t, finality(fast))) : undefined;
+  if (!tier) throw new Error("Circle returned no fee for this transfer type.");
+  const minimumFee = tier.minimumFee;
+  if (typeof minimumFee !== "number" && typeof minimumFee !== "string")
+    throw new Error(`Circle's fee looks wrong (${String(minimumFee)} bps). Refusing to send.`);
+  return { kind: "usdc", maxFee: usdcMaxFee(amount, minimumFee, fast) };
+}
+
+function feeAmount(value: unknown): bigint {
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "bigint")
+    throw new Error("Circle returned a quote without a valid fee.");
+  let fee: bigint;
+  try {
+    fee = BigInt(value);
+  } catch {
+    throw new Error("Circle returned a quote without a valid fee.");
+  }
+  if (fee < 0n) throw new Error("Circle returned an invalid quote.");
+  return fee;
+}
+
+function expiryOf(value: unknown): QuoteExpiry | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const expiry: QuoteExpiry = {};
+  if ("mode" in value && typeof value.mode === "string") expiry.mode = value.mode;
+  if ("expiresAtBlock" in value && typeof value.expiresAtBlock === "number")
+    expiry.expiresAtBlock = value.expiresAtBlock;
+  if ("expiresAt" in value && typeof value.expiresAt === "number")
+    expiry.expiresAt = value.expiresAt;
+  return expiry;
+}
+
+// fee is a decimal string of wei. Booleans and objects are rejected before BigInt, which throws on them.
+export function parseCctpxQuote(q: unknown): CctpxQuote {
+  if (typeof q !== "object" || q === null)
+    throw new Error("Circle returned a quote without a valid fee.");
+  const fee = feeAmount("feeTotalAmount" in q ? q.feeTotalAmount : undefined);
+  const signed = "signedQuote" in q ? q.signedQuote : undefined;
+  if (typeof signed !== "string" || !signed) throw new Error("Circle returned an invalid quote.");
+  const expiry = "expiry" in q ? expiryOf(q.expiry) : undefined;
+  return expiry
+    ? { kind: "cctpx", fee, signedQuote: signed, expiry }
+    : { kind: "cctpx", fee, signedQuote: signed };
+}
+
+// Missing expiry is accepted. Circle quotes are short-lived either way, and Send fetches a fresh one.
+export function quoteFresh(
+  expiry: QuoteExpiry | undefined,
+  nowBlock: number,
+  nowSeconds: number
+): { ok: boolean; text: string } {
+  const e = expiry ?? {};
+  if (e.mode === "BLOCK_NUMBER" && e.expiresAtBlock) {
+    const left = e.expiresAtBlock - nowBlock;
+    return { ok: left >= 2, text: `valid for ${left} more blocks` };
+  }
+  if (e.expiresAt) {
+    const left = Math.round(e.expiresAt - nowSeconds);
+    return { ok: left >= 15, text: `valid for ${left} more seconds` };
+  }
+  return { ok: true, text: "no expiry given" };
+}
+
+export interface Attestation {
+  message: string;
+  attestation: string;
+}
+
+// Integers and decimal strings only. Number(null) and Number(true) are real Circle domains, so they are rejected.
+function circleDomain(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return value;
+  if (typeof value === "string" && /^(0|[1-9]\d*)$/.test(value)) {
+    const parsed = Number(value);
+    if (Number.isSafeInteger(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function wrongDomain(raw: unknown, where: "to" | "from", name: string): Error {
+  const direction = where === "to" ? "goes to" : "comes from";
+  return new Error(
+    `This transfer ${direction} Circle domain ${String(raw)}, not ${where} ${name}. Pick the matching route.`
+  );
+}
+
+// The first Iris message for this burn.
+// Both domains must match the route before a completed message can be minted.
+// A parsed domain that disagrees throws. A missing or non-numeric domain returns null so the poll continues.
+export function readAttestation(payload: unknown, route: Route): Attestation | null {
+  const messages = recordOf(payload)?.messages;
+  const first = recordOf(Array.isArray(messages) ? messages[0] : undefined);
+  if (!first) return null;
+  const decoded = recordOf(first.decodedMessage);
+  if (!decoded) return null;
+  const dest = circleDomain(decoded.destinationDomain);
+  const src = circleDomain(decoded.sourceDomain);
+  if (dest !== undefined && dest !== route.dst.domain)
+    throw wrongDomain(decoded.destinationDomain, "to", CHAINS[route.dst.chainId].name);
+  if (src !== undefined && src !== route.src.domain)
+    throw wrongDomain(decoded.sourceDomain, "from", CHAINS[route.src.chainId].name);
+  if (dest === undefined || src === undefined) return null;
+  const { status, message, attestation } = first;
+  if (
+    status === "complete" &&
+    typeof message === "string" &&
+    message &&
+    typeof attestation === "string" &&
+    attestation &&
+    attestation !== "PENDING"
+  )
+    return { message, attestation };
+  return null;
 }

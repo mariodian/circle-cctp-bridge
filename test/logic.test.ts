@@ -32,15 +32,22 @@ import {
   spendError,
   transferMode,
   usdcMaxFee,
+  usdcQuote,
+  parseCctpxQuote,
+  quoteFresh,
+  readAttestation,
+  isTxHash,
   maxFillNote,
   maxFillReserve,
   maxFillSuffix,
   usdcRoute,
-  validEntry
+  validEntry,
+  type ChainId,
+  type QuoteSelection
 } from "../src/logic.js";
 
 const WALLET = "0x1111111111111111111111111111111111111111";
-const entry = (e: { label?: unknown; address?: unknown }) => validEntry(e, ethers.getAddress);
+const entry = (e: unknown) => validEntry(e, ethers.getAddress);
 
 test("cleanLabel keeps words and drops the rest", () => {
   expect(cleanLabel("  Home   safe!  ")).toBe("Home safe");
@@ -175,11 +182,11 @@ test("fees at the confirm threshold do not ask again", () => {
   expect(feeNeedsConfirm(5042, CHAINS[5042].feeConfirm)).toBe(false);
   expect(feeNeedsConfirm(43114, CHAINS[43114].feeConfirm + 1n)).toBe(true);
   expect(() => feeNeedsConfirm(999, 1n)).toThrow(/Unknown chain/);
-  expect(() => usdcRoute(999, 1, false)).toThrow(/Unknown chain/);
+  expect(() => usdcRoute(999 as ChainId, 1, false)).toThrow(/Unknown chain/);
 });
 
 test("a quote matches only the same route, amount, recipient, and mode", () => {
-  const quoted = {
+  const quoted: QuoteSelection = {
     key: "usdc_eth_arc",
     amount: 5n,
     to: WALLET,
@@ -208,7 +215,7 @@ test("every route points at a known domain, token, and manager", () => {
     expect(r.tokenManager).toMatch(/^0x[0-9a-fA-F]{40}$/);
     expect(r.defaultSelfMint).toBe(true);
     if (r.kind === "usdc") expect(r.tokenManager).toBe(TOKEN_MESSENGER_V2);
-    if (r.canWrap) wrap.push(key);
+    if (r.kind === "cctpx" && r.canWrap) wrap.push(key);
     for (const a of [r.src.token, r.dst.token, r.tokenManager])
       expect(NOT_A_RECIPIENT.has(a.toLowerCase())).toBe(true);
     expect(routeLabel(r)).toContain(r.symbol + ": ");
@@ -221,4 +228,148 @@ test("every route points at a known domain, token, and manager", () => {
   expect(ROUTES.eurc_arc_eth.tokenId).toBe(EURC.tokenId);
   expect(ROUTES.cirbtc_eth_arc.tokenManager).toBe(CIRBTC.manager);
   expect(ROUTES.weth_arc_eth.src.token).toBe(WETH[5042] ?? "");
+});
+
+test("validEntry rejects values that are not an address book object", () => {
+  for (const junk of [null, 42, "0xabc", []]) {
+    const result = entry(junk);
+    expect(result.ok).toBe(false);
+  }
+});
+
+test("USDC quote picks the tier for the finality and refuses a bad fee", () => {
+  const tiers = [
+    { finalityThreshold: 2000, minimumFee: 0 },
+    { finalityThreshold: 1000, minimumFee: 1 }
+  ];
+  expect(usdcQuote(10_000000n, tiers, false)).toEqual({ kind: "usdc", maxFee: 0n });
+  expect(usdcQuote(10_000000n, tiers, true)).toEqual({ kind: "usdc", maxFee: 2_000n });
+  expect(() => usdcQuote(1n, [], false)).toThrow(/no fee/);
+  expect(() => usdcQuote(1n, [{ finalityThreshold: 2000, minimumFee: true }], false)).toThrow(
+    /looks wrong/
+  );
+});
+
+test("CCTPx quote parsing rejects a fee that is not an integer amount", () => {
+  const signed = "0xabc";
+  expect(parseCctpxQuote({ feeTotalAmount: "1000", signedQuote: signed })).toEqual({
+    kind: "cctpx",
+    fee: 1000n,
+    signedQuote: signed
+  });
+  expect(
+    parseCctpxQuote({
+      feeTotalAmount: "1000",
+      signedQuote: signed,
+      expiry: { mode: "BLOCK_NUMBER", expiresAtBlock: 20 }
+    }).expiry
+  ).toEqual({ mode: "BLOCK_NUMBER", expiresAtBlock: 20 });
+  expect(() => parseCctpxQuote({ feeTotalAmount: true, signedQuote: signed })).toThrow(/valid fee/);
+  expect(() => parseCctpxQuote({ feeTotalAmount: "1.5", signedQuote: signed })).toThrow(
+    /valid fee/
+  );
+  expect(() => parseCctpxQuote({ feeTotalAmount: "-1", signedQuote: signed })).toThrow(
+    /invalid quote/
+  );
+  expect(() => parseCctpxQuote({ feeTotalAmount: "1", signedQuote: "" })).toThrow(/invalid quote/);
+  expect(() => parseCctpxQuote(null)).toThrow(/valid fee/);
+});
+
+test("quote freshness allows two blocks, fifteen seconds, or a missing expiry", () => {
+  expect(quoteFresh({ mode: "BLOCK_NUMBER", expiresAtBlock: 12 }, 10, 0)).toEqual({
+    ok: true,
+    text: "valid for 2 more blocks"
+  });
+  expect(quoteFresh({ mode: "BLOCK_NUMBER", expiresAtBlock: 11 }, 10, 0).ok).toBe(false);
+  expect(quoteFresh({ expiresAt: 1_000 }, 0, 985)).toEqual({
+    ok: true,
+    text: "valid for 15 more seconds"
+  });
+  expect(quoteFresh({ expiresAt: 1_000 }, 0, 986).ok).toBe(false);
+  expect(quoteFresh(undefined, 0, 0)).toEqual({ ok: true, text: "no expiry given" });
+});
+
+test("an attestation must match the route domains and be complete", () => {
+  const route = ROUTES.usdc_eth_arc;
+  const decoded = { sourceDomain: 0, destinationDomain: 26 };
+  expect(
+    readAttestation(
+      {
+        messages: [
+          { status: "complete", message: "0xabc", attestation: "0xdef", decodedMessage: decoded }
+        ]
+      },
+      route
+    )
+  ).toEqual({ message: "0xabc", attestation: "0xdef" });
+  expect(
+    readAttestation(
+      {
+        messages: [
+          { status: "complete", message: "0xabc", attestation: "PENDING", decodedMessage: decoded }
+        ]
+      },
+      route
+    )
+  ).toBeNull();
+  expect(readAttestation({ messages: [] }, route)).toBeNull();
+  expect(() =>
+    readAttestation(
+      { messages: [{ decodedMessage: { sourceDomain: 0, destinationDomain: 1 } }] },
+      route
+    )
+  ).toThrow("This transfer goes to Circle domain 1, not to Arc. Pick the matching route.");
+  expect(() =>
+    readAttestation(
+      { messages: [{ decodedMessage: { sourceDomain: "5", destinationDomain: "26" } }] },
+      route
+    )
+  ).toThrow(
+    "This transfer comes from Circle domain 5, not from Ethereum. Pick the matching route."
+  );
+  expect(
+    readAttestation(
+      {
+        messages: [
+          {
+            status: "complete",
+            message: "0xabc",
+            attestation: "0xdef",
+            decodedMessage: { sourceDomain: "0", destinationDomain: "26" }
+          }
+        ]
+      },
+      route
+    )
+  ).toEqual({ message: "0xabc", attestation: "0xdef" });
+  const complete = { status: "complete", message: "0xabc", attestation: "0xdef" };
+  expect(readAttestation({ messages: [complete] }, route)).toBeNull();
+  expect(
+    readAttestation(
+      {
+        messages: [{ ...complete, decodedMessage: { sourceDomain: false, destinationDomain: 26 } }]
+      },
+      route
+    )
+  ).toBeNull();
+  expect(
+    readAttestation(
+      { messages: [{ ...complete, decodedMessage: { sourceDomain: 0, destinationDomain: null } }] },
+      route
+    )
+  ).toBeNull();
+  expect(
+    readAttestation(
+      {
+        messages: [{ ...complete, decodedMessage: { sourceDomain: true, destinationDomain: 26 } }]
+      },
+      route
+    )
+  ).toBeNull();
+});
+
+test("a burn hash is 0x plus 64 hex characters", () => {
+  expect(isTxHash("0x" + "ab".repeat(32))).toBe(true);
+  expect(isTxHash("0x" + "ab".repeat(31))).toBe(false);
+  expect(isTxHash("zz" + "ab".repeat(32))).toBe(false);
 });

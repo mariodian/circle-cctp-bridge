@@ -131,8 +131,10 @@ Official references: [Circle CCTP docs](https://developers.circle.com/cctp), [CC
 ## Files
 
 - `index.html`: the page with its Content-Security-Policy.
-- `src/app.ts`: the page. `bun run build` writes `dist/app.js`, which `index.html` loads.
-- `src/logic.ts`: the safety checks, also covered by `bun test`. The build writes `dist/logic.js`.
+- `src/app.ts`: the page (wallet, address book, buttons). `bun run build` writes `dist/app.js`, which `index.html` loads.
+- `src/logic.ts`: the route catalog and the safety checks, covered by `bun test`. The build writes `dist/logic.js`.
+- `src/transfer.ts`: quotes, the burn and CCTPx send, and the mint watch.
+- `src/contracts.ts`: typed contract calls.
 - `dist/`: the browser build. Git ignores it.
 - `style.css`: the styles.
 
