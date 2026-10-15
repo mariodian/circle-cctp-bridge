@@ -107,10 +107,18 @@ type FeeNote = { note: string; reason?: AmountReason };
 
 // Buttons and the fee skeleton are reads of this. They cannot disagree.
 // `selection` says which inputs produced `body`. Only `ready` may be sent.
+// `needsApproval` is the last allowance read for that selection. Loading keeps it
+// across a reload, and preview keeps it while a transaction holds the quote.
+// A new selection, a disconnect, an invalid amount, or a quote error clears it.
 type FeeState =
   | ({ phase: "idle" } & FeeNote)
-  | { phase: "loading" }
-  | ({ phase: "preview"; body: Quoted; selection: QuoteSelection } & FeeNote)
+  | { phase: "loading"; needsApproval: boolean; selection: QuoteSelection | null }
+  | ({
+      phase: "preview";
+      body: Quoted;
+      selection: QuoteSelection;
+      needsApproval: boolean;
+    } & FeeNote)
   | { phase: "ready"; body: Quoted; selection: QuoteSelection; needsApproval: boolean };
 
 export type RecipientChoice =
@@ -171,6 +179,8 @@ class Bridge {
   selfMintText = $derived(selfMintLabel(this.route));
   mode = $derived(transferMode(this.route, { fast: this.fast, selfMint: this.selfMint }));
   feeLoading = $derived(this.#fee.phase === "loading");
+  // Label only. approveOn and sendOn stay the "ready right now" gates.
+  needsApproval = $derived(this.#fee.phase !== "idle" && this.#fee.needsApproval);
   approveOn = $derived.by(() => {
     const fee = this.#fee;
     return fee.phase === "ready" && fee.needsApproval;
@@ -462,7 +472,12 @@ class Bridge {
       return;
     }
     const seq = this.#feeSeq;
-    this.#fee = { phase: "loading" };
+    const carried = this.me ? this.#carriedApproval(parsed.amount) : false;
+    this.#fee = {
+      phase: "loading",
+      needsApproval: carried,
+      selection: carried ? this.#quotedSelection(parsed.amount) : null
+    };
     const amount = parsed.amount;
     this.#feeTimer = setTimeout(() => {
       this.#feeTimer = undefined;
@@ -473,15 +488,38 @@ class Bridge {
   // Keep the numbers only when they still describe this form. Ready is no longer sendable.
   #holdQuote(amount: bigint): void {
     const fee = this.#fee;
+    if (fee.phase === "loading") {
+      if (fee.selection && this.#sameSelection(fee.selection, amount)) return;
+      this.#fee = { phase: "idle", note: "" };
+      return;
+    }
     if (
       (fee.phase === "ready" || fee.phase === "preview") &&
       this.#sameSelection(fee.selection, amount)
     ) {
       if (fee.phase === "ready")
-        this.#fee = { phase: "preview", body: fee.body, selection: fee.selection, note: "" };
+        this.#fee = {
+          phase: "preview",
+          body: fee.body,
+          selection: fee.selection,
+          needsApproval: fee.needsApproval,
+          note: ""
+        };
       return;
     }
     if (fee.phase !== "idle") this.#fee = { phase: "idle", note: "" };
+  }
+
+  // True when the fee on screen is an allowance shortfall for this amount.
+  #carriedApproval(amount: bigint): boolean {
+    const fee = this.#fee;
+    if (fee.phase === "idle" || !fee.needsApproval || fee.selection === null) return false;
+    return this.#sameSelection(fee.selection, amount);
+  }
+
+  #quotedSelection(amount: bigint): QuoteSelection | null {
+    const to = this.#quoteTo();
+    return to === undefined ? null : this.#selection(amount, to);
   }
 
   #sameSelection(selection: QuoteSelection, amount: bigint): boolean {
@@ -533,6 +571,7 @@ class Bridge {
           phase: "preview",
           body: next,
           selection: this.#selection(amount, quotedTo),
+          needsApproval: false,
           note: ""
         });
         return;
@@ -542,10 +581,12 @@ class Bridge {
       if (seq !== this.#feeSeq || this.busy) return;
       const selection = this.#selection(amount, to.address);
       if (why) {
+        const fee = this.#fee;
         this.#commit(seq, {
           phase: "preview",
           body: next,
           selection,
+          needsApproval: fee.phase === "loading" && fee.needsApproval,
           note: why,
           reason: "spend"
         });

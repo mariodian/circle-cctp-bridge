@@ -157,23 +157,16 @@
 
     <QuoteSummary />
 
-    <div class="flex flex-wrap gap-2">
-      {#if bridge.canWrap}
-        <WrapDialog />
-      {/if}
-      <Button
-        id="approve"
-        variant="secondary"
-        disabled={bridge.busy || !bridge.approveOn}
-        onclick={() => bridge.approve()}>Approve</Button
-      >
-    </div>
+    {#if bridge.canWrap}
+      <WrapDialog />
+    {/if}
     <div class="flex flex-col gap-3">
       <Button
-        id="send"
+        id={bridge.needsApproval ? "approve" : "send"}
         class="h-12 w-full text-base"
-        disabled={bridge.busy || !bridge.sendOn}
-        onclick={() => bridge.send()}>Send</Button
+        disabled={bridge.busy || !(bridge.needsApproval ? bridge.approveOn : bridge.sendOn)}
+        onclick={() => (bridge.needsApproval ? bridge.approve() : bridge.send())}
+        >{bridge.needsApproval ? "Approve" : "Send"}</Button
       >
       <ErrorAlert text={formError} />
       <ErrorAlert text={bridge.actionError} />

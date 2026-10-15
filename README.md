@@ -50,7 +50,7 @@ Then open <http://127.0.0.1:8000> in a browser with **Rabby** or **MetaMask**. I
 1. Pick the **route** and the **recipient**. The recipient is the connected wallet by default. To send to another address of yours, add it under "My other addresses" first.
 2. **Connect wallet.** The page switches your wallet to the source network and checks Circle's contracts on-chain.
 3. Enter the **amount** (or click MAX). The fee loads on its own.
-4. **Approve** the exact amount, then **Send**.
+4. The blue button says **Approve** when the token allowance is below the amount, and **Send** once a new allowance read shows it covers the amount. A rejected approve leaves the button on Approve. Approve is for the exact amount.
 5. If you sign the mint yourself (the default), the page waits for Circle's attestation and then switches your wallet to the destination network. There you sign `receiveMessage`, the mint. You need a little gas on the destination network for that: ETH on Ethereum, USDC on Arc, AVAX on Avalanche.
 
 For EURC, cirBTC and WETH you can instead turn off "Sign the mint". Circle then delivers the tokens for a forwarding fee, which you pay in the source network's gas token.
