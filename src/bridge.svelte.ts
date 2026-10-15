@@ -56,17 +56,22 @@ export function shortAddress(address: string): string {
   return `${address.slice(0, 7)}...${address.slice(-6)}`;
 }
 
-interface Pending {
-  selection: QuoteSelection;
-  body: Quoted;
+export type RecipientKey = "self" | `0x${string}`;
+
+function isAddressKey(value: string): value is `0x${string}` {
+  return /^0x[0-9a-fA-F]{40}$/.test(value);
 }
 
 // Buttons and the fee skeleton are reads of this. They cannot disagree.
+// `selection` says which inputs produced `body`. Only `ready` may be sent.
 type FeeState =
   | { phase: "idle"; note: string }
   | { phase: "loading" }
-  | { phase: "preview"; body: Quoted; note: string }
-  | { phase: "ready"; body: Quoted; pending: Pending; needsApproval: boolean };
+  | { phase: "preview"; body: Quoted; selection: QuoteSelection; note: string }
+  | { phase: "ready"; body: Quoted; selection: QuoteSelection; needsApproval: boolean };
+
+type RecipientChoice =
+  { kind: "self" } | { kind: "book"; entry: AddressEntry } | { kind: "missing" };
 
 interface Intent extends SendIntent {
   provider: BrowserProvider;
@@ -81,13 +86,13 @@ class Bridge {
   balanceText = $state("");
   logText = $state("");
   book = $state<AddressEntry[]>([]);
-  recipientKey = $state("self");
+  recipientKey = $state<RecipientKey>("self");
   busy = $state(false);
 
   #provider: BrowserProvider | undefined;
   #signer: JsonRpcSigner | undefined;
   #me = $state<string | undefined>();
-  // The only quote the card can send or display. Written by #commit and the terminal send path.
+  // Displayed quote. #invalidateQuote owns every exit. #commit publishes a fetch. Send replaces body only.
   #fee = $state<FeeState>({ phase: "idle", note: "" });
   #feeTimer: ReturnType<typeof setTimeout> | undefined;
   #feeSeq = 0;
@@ -104,7 +109,6 @@ class Bridge {
         this.selfMint;
         this.recipientKey;
         this.#me;
-        this.busy;
         this.#invalidateQuote();
       });
     });
@@ -147,6 +151,13 @@ class Bridge {
   get sendOn(): boolean {
     const fee = this.#fee;
     return fee.phase === "ready" && !fee.needsApproval;
+  }
+
+  get recipientLabel(): string {
+    const choice = this.#choice();
+    if (choice.kind === "self") return this.#me ? shortAddress(this.#me) : "—";
+    if (choice.kind === "book") return shortAddress(choice.entry.address);
+    return "—";
   }
 
   get feeText(): string {
@@ -198,9 +209,18 @@ class Bridge {
   }
 
   get rcptInfo(): string {
-    return this.recipientKey === "self"
+    return this.#choice().kind === "self"
       ? "Funds arrive at the same address on the destination network."
       : "⚠️ Funds go to a different address than the connected wallet. Check that you control it on the destination network.";
+  }
+
+  selectRecipient(key: string): void {
+    if (this.busy) return;
+    if (key === "self") {
+      this.recipientKey = "self";
+      return;
+    }
+    if (isAddressKey(key)) this.recipientKey = key;
   }
 
   log(m: string): void {
@@ -303,9 +323,10 @@ class Bridge {
   }
 
   async approve(): Promise<void> {
+    const ready = this.#readySelection();
     await this.#run(async () => {
       const intent = await this.#readIntent();
-      if (!quoteStillMatches(this.#pending()?.selection, intent.selection))
+      if (!quoteStillMatches(ready, intent.selection))
         throw new Error("Wait for the fee for this route, amount, recipient and mode.");
       const tx = await erc20(intent.route.src.token, intent.signer).approve(
         intent.route.tokenManager,
@@ -318,10 +339,11 @@ class Bridge {
   }
 
   async send(): Promise<void> {
+    const ready = this.#readySelection();
+    const quoted = this.#shown();
     await this.#run(async () => {
       const intent = await this.#readIntent();
-      const pending = this.#pending();
-      if (!pending || !quoteStillMatches(pending.selection, intent.selection))
+      if (!ready || !quoted || !quoteStillMatches(ready, intent.selection))
         throw new Error("Wait for the fee for this route, amount, recipient and mode.");
       const why = spendError(
         intent.route,
@@ -330,20 +352,13 @@ class Bridge {
       );
       if (why) throw new Error(why);
       await confirmRecipient(this.#deps(), intent.route, intent.to);
-      const quoted = pending.body;
       await sendAndWatch(this.#deps(), intent, quoted, {
         onQuote: (body) => {
           const fee = this.#fee;
-          if (fee.phase !== "ready") return;
-          this.#fee = {
-            phase: "ready",
-            body,
-            pending: { selection: intent.selection, body },
-            needsApproval: false
-          };
+          if (fee.phase !== "ready" && fee.phase !== "preview") return;
+          this.#fee = { ...fee, body };
         },
         onSubmitted: (hash) => {
-          this.#showPreview(quoted);
           this.log("Transfer sent: " + CHAINS[intent.route.src.chainId].explorer + hash);
           this.log(
             `Keep this hash. If you close the page, finish the transfer later with it: ${hash}`
@@ -370,9 +385,8 @@ class Bridge {
     const mode = transferMode(r, { fast: r.defaultFast, selfMint: r.defaultSelfMint });
     this.fast = mode.fast;
     this.selfMint = mode.selfMint;
-    this.#bumpQuote();
-    this.#fee = { phase: "idle", note: "" };
     this.balanceText = "";
+    this.#invalidateQuote();
   }
 
   #shown(): Quoted | null {
@@ -380,14 +394,8 @@ class Bridge {
     return fee.phase === "preview" || fee.phase === "ready" ? fee.body : null;
   }
 
-  #pending(): Pending | null {
-    return this.#fee.phase === "ready" ? this.#fee.pending : null;
-  }
-
-  #showPreview(fallback: Quoted): void {
-    const fee = this.#fee;
-    const body = fee.phase === "ready" || fee.phase === "preview" ? fee.body : fallback;
-    this.#fee = { phase: "preview", body, note: "" };
+  #readySelection(): QuoteSelection | null {
+    return this.#fee.phase === "ready" ? this.#fee.selection : null;
   }
 
   // Drop a scheduled or in-flight quote so it cannot commit over a newer input or a transaction.
@@ -404,10 +412,9 @@ class Bridge {
     this.#fee = next;
   }
 
-  // Re-reads the inputs the effect tracked. A transaction keeps the current phase until it unlocks.
+  // Re-reads the inputs the effect tracked. A transaction keeps a matching quote on screen.
   #invalidateQuote(): void {
     this.#bumpQuote();
-    if (this.busy) return;
     const parsed = this.#tryAmount();
     if (!parsed.ok) {
       this.#fee = { phase: "idle", note: "Enter a valid amount." };
@@ -417,12 +424,55 @@ class Bridge {
       this.#fee = { phase: "idle", note: "" };
       return;
     }
+    if (this.busy) {
+      this.#holdQuote(parsed.amount);
+      return;
+    }
     const seq = this.#feeSeq;
     this.#fee = { phase: "loading" };
+    const amount = parsed.amount;
     this.#feeTimer = setTimeout(() => {
       this.#feeTimer = undefined;
-      void this.#loadFee(seq);
+      void this.#loadFee(seq, amount);
     }, 400);
+  }
+
+  // Keep the numbers only when they still describe this form. Ready is no longer sendable.
+  #holdQuote(amount: bigint): void {
+    const fee = this.#fee;
+    if (
+      (fee.phase === "ready" || fee.phase === "preview") &&
+      this.#sameSelection(fee.selection, amount)
+    ) {
+      if (fee.phase === "ready")
+        this.#fee = { phase: "preview", body: fee.body, selection: fee.selection, note: "" };
+      return;
+    }
+    if (fee.phase !== "idle") this.#fee = { phase: "idle", note: "" };
+  }
+
+  #sameSelection(selection: QuoteSelection, amount: bigint): boolean {
+    const to = this.#quoteTo();
+    const mode = this.mode;
+    return (
+      selection.key === this.routeKey &&
+      selection.amount === amount &&
+      selection.fast === mode.fast &&
+      selection.selfMint === mode.selfMint &&
+      to !== undefined &&
+      selection.to === to
+    );
+  }
+
+  #selection(amount: bigint, to: string): QuoteSelection {
+    const mode = this.mode;
+    return {
+      key: this.routeKey,
+      amount,
+      to,
+      fast: mode.fast,
+      selfMint: mode.selfMint
+    };
   }
 
   #tryAmount(): { ok: true; amount: bigint } | { ok: false } {
@@ -433,32 +483,33 @@ class Bridge {
     }
   }
 
-  async #loadFee(seq: number): Promise<void> {
+  async #loadFee(seq: number, amount: bigint): Promise<void> {
     if (seq !== this.#feeSeq || this.busy) return;
-    const parsed = this.#tryAmount();
-    if (!parsed.ok) {
-      this.#commit(seq, { phase: "idle", note: "Enter a valid amount." });
-      return;
-    }
-    const amount = parsed.amount;
-    if (amount <= 0n) {
-      this.#commit(seq, { phase: "idle", note: "" });
+    const quotedTo = this.#quoteTo();
+    if (quotedTo === undefined) {
+      this.#commit(seq, { phase: "idle", note: "Pick a recipient from the address book." });
       return;
     }
     const r = this.route;
-    const mode = transferMode(r, { fast: this.fast, selfMint: this.selfMint });
+    const mode = this.mode;
     try {
-      const next = await fetchQuote(r, amount, this.#quoteRecipient(), mode.fast, mode.selfMint);
+      const next = await fetchQuote(r, amount, quotedTo, mode.fast, mode.selfMint);
       if (seq !== this.#feeSeq || this.busy) return;
       if (!this.#me || !this.#provider) {
-        this.#commit(seq, { phase: "preview", body: next, note: "" });
+        this.#commit(seq, {
+          phase: "preview",
+          body: next,
+          selection: this.#selection(amount, quotedTo),
+          note: ""
+        });
         return;
       }
       const to = this.#recipient();
       const why = spendError(r, amount, await this.#tokenBalance(r.src.token));
       if (seq !== this.#feeSeq || this.busy) return;
+      const selection = this.#selection(amount, to.address);
       if (why) {
-        this.#commit(seq, { phase: "preview", body: next, note: why });
+        this.#commit(seq, { phase: "preview", body: next, selection, note: why });
         return;
       }
       const allowance = await erc20(r.src.token, this.#provider).allowance(
@@ -468,31 +519,26 @@ class Bridge {
       this.#commit(seq, {
         phase: "ready",
         body: next,
-        pending: {
-          selection: {
-            key: this.routeKey,
-            amount,
-            to: to.address,
-            fast: mode.fast,
-            selfMint: mode.selfMint
-          },
-          body: next
-        },
+        selection,
         needsApproval: allowance < amount
       });
     } catch (e) {
       if (seq !== this.#feeSeq || this.busy) return;
-      const message = errorText(e);
-      this.#commit(seq, { phase: "idle", note: message });
-      this.log("ERROR: " + message);
+      this.#commit(seq, { phase: "idle", note: errorText(e) });
     }
   }
 
-  #quoteRecipient(): string {
-    if (this.recipientKey !== "self") {
-      const entry = this.book.find((item) => item.address === this.recipientKey);
-      if (entry) return lib().getAddress(entry.address);
-    }
+  #choice(): RecipientChoice {
+    if (this.recipientKey === "self") return { kind: "self" };
+    const entry = this.book.find((item) => item.address === this.recipientKey);
+    return entry ? { kind: "book", entry } : { kind: "missing" };
+  }
+
+  // Address the quote is priced for. Undefined when the key is not in the book.
+  #quoteTo(): string | undefined {
+    const choice = this.#choice();
+    if (choice.kind === "missing") return undefined;
+    if (choice.kind === "book") return lib().getAddress(choice.entry.address);
     return this.#me ?? lib().ZeroAddress;
   }
 
@@ -576,12 +622,15 @@ class Bridge {
 
   #recipient(): Recipient {
     if (!this.#me) throw new Error("Connect your wallet first.");
-    if (this.recipientKey === "self")
-      return { address: this.#me, self: true, label: "this wallet" };
-    const entry = this.book.find((e) => e.address === this.recipientKey);
-    if (!entry)
-      throw new Error("The recipient must be this wallet or an address from your address book.");
-    return { address: lib().getAddress(entry.address), self: false, label: entry.label };
+    const choice = this.#choice();
+    if (choice.kind === "self") return { address: this.#me, self: true, label: "this wallet" };
+    if (choice.kind === "book")
+      return {
+        address: lib().getAddress(choice.entry.address),
+        self: false,
+        label: choice.entry.label
+      };
+    throw new Error("The recipient must be this wallet or an address from your address book.");
   }
 
   async #readIntent(): Promise<Intent> {
@@ -612,17 +661,16 @@ class Bridge {
 
   async #run(fn: () => Promise<void>): Promise<void> {
     if (this.busy) return;
-    // Cancel before the first await. The effect also sees busy, but only after this stack yields.
-    this.#bumpQuote();
     this.busy = true;
+    // Drop sendable state before the first await. The effect does not see busy.
+    this.#invalidateQuote();
     try {
       await fn();
     } catch (e) {
       this.log("ERROR: " + errorText(e));
     } finally {
-      const fee = this.#fee;
-      if (fee.phase === "ready") this.#fee = { phase: "preview", body: fee.body, note: "" };
       this.busy = false;
+      this.#invalidateQuote();
     }
   }
 }

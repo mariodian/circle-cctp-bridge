@@ -35,12 +35,6 @@
       abLabel = "";
     }
   }
-
-  const recipientLabel = $derived.by(() => {
-    if (bridge.recipientKey === "self") return bridge.me ? shortAddress(bridge.me) : "—";
-    const entry = bridge.book.find((item) => item.address === bridge.recipientKey);
-    return shortAddress(entry?.address ?? bridge.recipientKey);
-  });
 </script>
 
 {#snippet tokenDialog(title: string, side: "src" | "dst", open: boolean)}
@@ -140,7 +134,7 @@
         disabled={bridge.busy}
       >
         <span>Recipient</span>
-        <span class="text-muted-foreground font-mono text-xs">{recipientLabel}</span>
+        <span class="text-muted-foreground font-mono text-xs">{bridge.recipientLabel}</span>
       </Dialog.Trigger>
       <Dialog.Content>
         <Dialog.Header>
@@ -155,7 +149,7 @@
             class="justify-start"
             disabled={bridge.busy}
             onclick={() => {
-              bridge.recipientKey = "self";
+              bridge.selectRecipient("self");
               recipientOpen = false;
             }}
           >
@@ -167,7 +161,7 @@
               class="justify-start"
               disabled={bridge.busy}
               onclick={() => {
-                bridge.recipientKey = entry.address;
+                bridge.selectRecipient(entry.address);
                 recipientOpen = false;
               }}
             >
