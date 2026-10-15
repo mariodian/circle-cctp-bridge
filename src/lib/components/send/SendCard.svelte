@@ -1,21 +1,38 @@
 <script lang="ts">
+  import ArrowRightLeftIcon from "@lucide/svelte/icons/arrow-right-left";
+  import MoveRightIcon from "@lucide/svelte/icons/move-right";
   import { Button } from "$lib/components/ui/button/index.js";
   import * as Card from "$lib/components/ui/card/index.js";
   import { Input } from "$lib/components/ui/input/index.js";
   import { Label } from "$lib/components/ui/label/index.js";
   import { Switch } from "$lib/components/ui/switch/index.js";
   import { bridge } from "$lib/bridge/bridge.svelte.js";
-  import { CHAINS } from "$lib/cctp/logic.js";
+  import { CHAINS, reverseRoute } from "$lib/cctp/logic.js";
   import QuoteSummary from "./QuoteSummary.svelte";
   import RecipientDialog from "./RecipientDialog.svelte";
   import RouteDialog from "./RouteDialog.svelte";
+
+  const swapped = $derived(reverseRoute(bridge.routeKey));
 </script>
 
 <Card.Root>
   <Card.Content class="flex flex-col gap-6">
     <div class="flex items-center justify-center gap-3">
       <RouteDialog title="From" side="src" />
-      <span class="text-muted-foreground" aria-hidden="true">→</span>
+      <Button
+        id="swap"
+        variant="ghost"
+        size="icon"
+        class="text-muted-foreground border-transparent bg-transparent shadow-none hover:border-border hover:bg-transparent"
+        aria-label="Swap From and To"
+        disabled={bridge.busy || swapped === undefined}
+        onclick={() => {
+          if (swapped) bridge.setRoute(swapped);
+        }}
+      >
+        <MoveRightIcon class="group-hover/button:hidden" />
+        <ArrowRightLeftIcon class="hidden group-hover/button:block" />
+      </Button>
       <RouteDialog title="To" side="dst" />
     </div>
 

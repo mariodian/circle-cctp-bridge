@@ -216,6 +216,8 @@ class Bridge {
     if (this.busy || !isRouteKey(key) || key === this.routeKey) return;
     this.routeKey = key;
     this.#applyRouteDefaults();
+    // The old source is no longer on screen. Rewrite or clear before the chain switch.
+    this.#syncBalanceText();
     if (!this.me) return;
     void this.#run(async () => {
       await this.#ensureChain(this.route.src.chainId);
@@ -780,11 +782,11 @@ class Bridge {
     this.#publish(session);
   }
 
-  // Send line for the route source. A settled read for any other chain clears it.
+  // Send line for the route source.
+  // Only a ready read for this account on that chain keeps the line. Every other phase clears it.
   #syncBalanceText(): void {
     const book = this.holdings;
     const route = this.route;
-    if (book.phase === "idle" || book.phase === "loading" || book.account !== this.#me) return;
     const token = this.#sourceRow();
     const gas = book.phase === "ready" ? book.rows.find((row) => row.kind === "native") : undefined;
     if (!token || !gas) {
@@ -814,8 +816,11 @@ class Bridge {
       shown.phase === "ready" &&
       shown.account === session.account &&
       shown.chainId === session.chainId;
-    if (!keep)
+    if (!keep) {
       this.holdings = { phase: "loading", account: session.account, chainId: session.chainId };
+      // Drop the previous account or chain before the read returns.
+      this.#syncBalanceText();
+    }
     try {
       const chainId = session.chainId;
       const known = isChainId(chainId);

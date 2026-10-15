@@ -266,6 +266,18 @@ export function routeMatching(
   return (kept ?? matches[0])?.[0];
 }
 
+// Same token with source and destination swapped, when that route exists.
+export function reverseRoute(current: RouteKey): RouteKey | undefined {
+  const hold = ROUTES[current];
+  const found = (Object.entries(ROUTES) as [RouteKey, Route][]).find(
+    ([, route]) =>
+      route.symbol === hold.symbol &&
+      route.src.chainId === hold.dst.chainId &&
+      route.dst.chainId === hold.src.chainId
+  );
+  return found?.[0];
+}
+
 // Attestation wait from the route table in README.md. Ethereum is the slow source.
 export function routeTime(r: Route, fast: boolean): string {
   if (r.src.chainId !== 1) return r.kind === "usdc" ? "seconds" : "seconds to minutes";

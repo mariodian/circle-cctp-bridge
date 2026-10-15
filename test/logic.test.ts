@@ -29,6 +29,7 @@ import {
   finality,
   quoteStillMatches,
   routeLabel,
+  reverseRoute,
   routeMatching,
   routeTime,
   assetsOn,
@@ -268,6 +269,12 @@ test("editing one side keeps the other endpoint when that pair exists", () => {
   expect(routeMatching("usdc_arc_eth", "src", 5042, "EURC")).toBe("eurc_arc_eth");
   expect(routeMatching("usdc_eth_arc", "dst", 1, "USDC")).toBe("usdc_av_eth");
   expect(routeMatching("usdc_eth_arc", "dst", 43114, "USDC")).toBeUndefined();
+  expect(reverseRoute("usdc_eth_arc")).toBe("usdc_arc_eth");
+  expect(reverseRoute("usdc_arc_eth")).toBe("usdc_eth_arc");
+  expect(reverseRoute("weth_eth_arc")).toBe("weth_arc_eth");
+  expect(reverseRoute("cirbtc_arc_eth")).toBe("cirbtc_eth_arc");
+  expect(reverseRoute("eurc_arc_eth")).toBeUndefined();
+  expect(reverseRoute("usdc_av_eth")).toBeUndefined();
 });
 
 test("validEntry rejects values that are not an address book object", () => {

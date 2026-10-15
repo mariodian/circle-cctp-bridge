@@ -6,7 +6,14 @@
   import { Separator } from "$lib/components/ui/separator/index.js";
   import { Skeleton } from "$lib/components/ui/skeleton/index.js";
   import { bridge } from "$lib/bridge/bridge.svelte.js";
-  import { CHAINS, CHAIN_IDS, routeMatching, symbolsOn, type ChainId } from "$lib/cctp/logic.js";
+  import {
+    CHAINS,
+    CHAIN_IDS,
+    ROUTES,
+    routeMatching,
+    symbolsOn,
+    type ChainId
+  } from "$lib/cctp/logic.js";
 
   let { title, side }: { title: string; side: "src" | "dst" } = $props();
 
@@ -20,7 +27,8 @@
     if (next) void bridge.reloadPortfolio();
   }
 
-  // Amount on the wallet's current chain. Other chains, and a failed read, are empty.
+  // Amount on the wallet's current chain. Another chain, and a failed read, are empty.
+  // The chain section owns the failure sentence.
   function pickerAmount(
     chainId: ChainId,
     symbol: string
@@ -30,7 +38,12 @@
       return { kind: "empty" };
     if (book.phase === "loading") return { kind: "loading" };
     if (book.phase === "error") return { kind: "empty" };
-    const row = book.rows.find((item) => item.kind === "token" && item.symbol === symbol);
+    const token = Object.values(ROUTES)
+      .find((route) => route.symbol === symbol && route[side].chainId === chainId)
+      ?.[side].token.toLowerCase();
+    const row = token
+      ? book.rows.find((item) => item.kind === "token" && item.id.toLowerCase() === token)
+      : undefined;
     return row ? { kind: "amount", text: row.amount } : { kind: "empty" };
   }
 
@@ -64,12 +77,21 @@
         {#each CHAIN_IDS as chainId (chainId)}
           {@const chain = CHAINS[chainId]}
           {@const symbols = symbolsOn(side, chainId)}
+          {@const book = bridge.holdings}
+          {@const failed =
+            book.phase === "error" && book.chainId === chainId && book.account === bridge.me}
           {#if symbols.length > 0}
             <div>
               <p class="text-muted-foreground mb-2 text-xs font-medium">{chain.name}</p>
+              {#if failed}
+                <p class="text-muted-foreground mb-2 text-xs">
+                  Balance unavailable on this network.
+                </p>
+              {/if}
               <Separator class="mb-2" />
               <div class="flex flex-col gap-1">
                 {#each symbols as symbol (symbol)}
+                  {@const amount = bridge.me ? pickerAmount(chainId, symbol) : undefined}
                   <Button
                     variant="ghost"
                     class="h-auto w-full justify-between px-2"
@@ -77,15 +99,12 @@
                     onclick={() => choose(chainId, symbol)}
                   >
                     <span>{symbol}</span>
-                    {#if bridge.me}
-                      {@const amount = pickerAmount(chainId, symbol)}
-                      {#if amount.kind === "amount"}
-                        <span class="text-muted-foreground font-mono text-xs">{amount.text}</span>
-                      {:else if amount.kind === "loading"}
-                        <Skeleton class="h-3 w-14" />
-                      {:else}
-                        <span class="text-muted-foreground text-xs">—</span>
-                      {/if}
+                    {#if amount?.kind === "amount"}
+                      <span class="text-muted-foreground font-mono text-xs">{amount.text}</span>
+                    {:else if amount?.kind === "loading"}
+                      <Skeleton class="h-3 w-14" />
+                    {:else if amount}
+                      <span class="text-muted-foreground text-xs">—</span>
                     {/if}
                   </Button>
                 {/each}
