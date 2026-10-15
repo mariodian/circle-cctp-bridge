@@ -2,6 +2,7 @@ import { ethers } from "ethers";
 import { test, expect } from "bun:test";
 import {
   CHAINS,
+  CHAIN_IDS,
   CIRBTC,
   CCTS,
   EURC,
@@ -47,7 +48,8 @@ import {
   validEntry,
   type ChainId,
   type QuoteSelection
-} from "../src/logic.js";
+} from "../src/lib/cctp/logic.js";
+import { feeText, receiveText, shortAddress } from "../src/lib/format.js";
 
 const WALLET = "0x1111111111111111111111111111111111111111";
 const entry = (e: unknown) => validEntry(e, ethers.getAddress);
@@ -245,6 +247,10 @@ test("route time follows the source chain and the token kind", () => {
   expect(routeTime(ROUTES.weth_arc_eth, false)).toBe("seconds to minutes");
 });
 
+test("route dialogs list Ethereum, then Arc, then Avalanche", () => {
+  expect(CHAIN_IDS.map((id) => CHAINS[id].name)).toEqual(["Ethereum", "Arc", "Avalanche"]);
+});
+
 test("editing one side keeps the other endpoint when that pair exists", () => {
   expect(symbolsOn("src", 1)).toEqual(["USDC", "cirBTC", "WETH"]);
   expect(symbolsOn("src", 43114)).toEqual(["USDC"]);
@@ -394,6 +400,33 @@ test("an attestation must match the route domains and be complete", () => {
       route
     )
   ).toBeNull();
+});
+
+test("shortAddress keeps 0x, five hex chars, three dots, and the last six", () => {
+  expect(shortAddress("0x1747311111111111111111111111111136ed3A")).toBe("0x17473...36ed3A");
+  expect(shortAddress("0x1234")).toBe("0x1234");
+  expect(shortAddress("not-an-address")).toBe("not-an-address");
+});
+
+test("fee and receive text follow the shown quote", () => {
+  const usdc = ROUTES.usdc_eth_arc;
+  const weth = ROUTES.weth_eth_arc;
+  const maxFee = 50_000n;
+  const usdcQuote = { kind: "usdc" as const, maxFee };
+  const cctpxQuote = {
+    kind: "cctpx" as const,
+    fee: 10n ** 15n,
+    signedQuote: "0x"
+  };
+  expect(feeText(usdc, "", null)).toBe("Enter an amount");
+  expect(feeText(usdc, "1", null)).toBe("—");
+  expect(feeText(usdc, "1", usdcQuote)).toBe("at most 0.05 USDC");
+  expect(receiveText(usdc, "1", usdcQuote)).toBe("0.95 USDC");
+  expect(receiveText(usdc, "0.01", usdcQuote)).toBe("0.0 USDC");
+  expect(receiveText(usdc, "nope", usdcQuote)).toBe("nope USDC");
+  expect(feeText(weth, "1", cctpxQuote)).toBe("0.001 ETH");
+  expect(receiveText(weth, "", null)).toBe("0 WETH");
+  expect(receiveText(weth, "1.5", cctpxQuote)).toBe("1.5 WETH");
 });
 
 test("a burn hash is 0x plus 64 hex characters", () => {

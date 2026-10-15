@@ -7,7 +7,6 @@ import {
   fastAllowed,
   fastLabel,
   isTxHash,
-  maxFillNote,
   maxFillReserve,
   maxFillSuffix,
   quoteStillMatches,
@@ -21,8 +20,8 @@ import {
   type Quoted,
   type Route,
   type RouteKey
-} from "./logic.js";
-import { erc20, errorText, lib, weth } from "./contracts.js";
+} from "$lib/cctp/logic.js";
+import { erc20, errorText, lib, weth } from "$lib/cctp/contracts.js";
 import {
   confirmRecipient,
   fetchQuote,
@@ -32,7 +31,7 @@ import {
   type Deps,
   type Recipient,
   type SendIntent
-} from "./transfer.js";
+} from "$lib/cctp/transfer.js";
 
 const AB_KEY = "circle-cctp-bridge.addressBook";
 
@@ -50,12 +49,6 @@ const wraps = (r: Route): boolean => r.kind === "cctpx" && !!r.canWrap;
 
 const fillable = (bal: bigint, reserve: bigint): bigint => (bal > reserve ? bal - reserve : 0n);
 
-/** `0x17473...36ed3A` — 0x plus 5 hex chars, then the last 6. */
-export function shortAddress(address: string): string {
-  if (!address.startsWith("0x") || address.length < 13) return address;
-  return `${address.slice(0, 7)}...${address.slice(-6)}`;
-}
-
 export type RecipientKey = "self" | `0x${string}`;
 
 function isAddressKey(value: string): value is `0x${string}` {
@@ -70,7 +63,7 @@ type FeeState =
   | { phase: "preview"; body: Quoted; selection: QuoteSelection; note: string }
   | { phase: "ready"; body: Quoted; selection: QuoteSelection; needsApproval: boolean };
 
-type RecipientChoice =
+export type RecipientChoice =
   { kind: "self" } | { kind: "book"; entry: AddressEntry } | { kind: "missing" };
 
 interface Intent extends SendIntent {
@@ -88,14 +81,39 @@ class Bridge {
   book = $state<AddressEntry[]>([]);
   recipientKey = $state<RecipientKey>("self");
   busy = $state(false);
+  #me = $state<string | undefined>();
 
   #provider: BrowserProvider | undefined;
   #signer: JsonRpcSigner | undefined;
-  #me = $state<string | undefined>();
   // Displayed quote. #invalidateQuote owns every exit. #commit publishes a fetch. Send replaces body only.
   #fee = $state<FeeState>({ phase: "idle", note: "" });
   #feeTimer: ReturnType<typeof setTimeout> | undefined;
   #feeSeq = 0;
+
+  me = $derived(this.#me);
+  route = $derived(ROUTES[this.routeKey]);
+  recipient = $derived.by((): RecipientChoice => this.#choice());
+  shownQuote = $derived.by(() => this.#shown());
+  fastLocked = $derived(this.busy || !fastAllowed(this.route));
+  selfMintDisabled = $derived(this.busy || selfMintLocked(this.route));
+  fastText = $derived(fastLabel(this.route));
+  mode = $derived(transferMode(this.route, { fast: this.fast, selfMint: this.selfMint }));
+  feeLoading = $derived(this.#fee.phase === "loading");
+  approveOn = $derived.by(() => {
+    const fee = this.#fee;
+    return fee.phase === "ready" && fee.needsApproval;
+  });
+  sendOn = $derived.by(() => {
+    const fee = this.#fee;
+    return fee.phase === "ready" && !fee.needsApproval;
+  });
+  feeNote = $derived.by(() => {
+    const fee = this.#fee;
+    return fee.phase === "idle" || fee.phase === "preview" ? fee.note : "";
+  });
+  canWrap = $derived(wraps(this.route));
+  wrapOn = $derived(this.canWrap && this.me !== undefined);
+  resumeOn = $derived(this.me !== undefined);
 
   constructor() {
     this.book = this.#loadBook();
@@ -108,110 +126,11 @@ class Bridge {
         this.fast;
         this.selfMint;
         this.recipientKey;
-        this.#me;
+        this.me;
         this.#invalidateQuote();
       });
     });
     import.meta.hot?.dispose(stop);
-  }
-
-  get route(): Route {
-    return ROUTES[this.routeKey];
-  }
-
-  get me(): string | undefined {
-    return this.#me;
-  }
-
-  get fastLocked(): boolean {
-    return this.busy || !fastAllowed(this.route);
-  }
-
-  get selfMintDisabled(): boolean {
-    return this.busy || selfMintLocked(this.route);
-  }
-
-  get fastText(): string {
-    return fastLabel(this.route);
-  }
-
-  get mode(): { fast: boolean; selfMint: boolean } {
-    return transferMode(this.route, { fast: this.fast, selfMint: this.selfMint });
-  }
-
-  get feeLoading(): boolean {
-    return this.#fee.phase === "loading";
-  }
-
-  get approveOn(): boolean {
-    const fee = this.#fee;
-    return fee.phase === "ready" && fee.needsApproval;
-  }
-
-  get sendOn(): boolean {
-    const fee = this.#fee;
-    return fee.phase === "ready" && !fee.needsApproval;
-  }
-
-  get recipientLabel(): string {
-    const choice = this.#choice();
-    if (choice.kind === "self") return this.#me ? shortAddress(this.#me) : "—";
-    if (choice.kind === "book") return shortAddress(choice.entry.address);
-    return "—";
-  }
-
-  get feeText(): string {
-    const body = this.#shown();
-    if (!body) return this.amount.trim() ? "—" : "Enter an amount";
-    if (body.kind === "usdc") return `at most ${lib().formatUnits(body.maxFee, 6)} USDC`;
-    return `${lib().formatEther(body.fee)} ${CHAINS[this.route.src.chainId].native}`;
-  }
-
-  get receiveText(): string {
-    const symbol = this.route.symbol;
-    const body = this.#shown();
-    if (!body || body.kind !== "usdc") {
-      const entered = this.amount.trim();
-      return `${entered || "0"} ${symbol}`;
-    }
-    try {
-      const amount = this.#amountUnits();
-      const net = amount > body.maxFee ? amount - body.maxFee : 0n;
-      return `${lib().formatUnits(net, this.route.decimals)} ${symbol}`;
-    } catch {
-      return `${this.amount.trim() || "0"} ${symbol}`;
-    }
-  }
-
-  get reserveNote(): string {
-    return maxFillNote(this.route);
-  }
-
-  get feeNote(): string {
-    const fee = this.#fee;
-    return fee.phase === "idle" || fee.phase === "preview" ? fee.note : "";
-  }
-
-  get canWrap(): boolean {
-    return wraps(this.route);
-  }
-
-  get wrapOn(): boolean {
-    return this.canWrap && this.#me !== undefined;
-  }
-
-  get resumeOn(): boolean {
-    return this.#me !== undefined;
-  }
-
-  get symbol(): string {
-    return this.route.symbol;
-  }
-
-  get rcptInfo(): string {
-    return this.#choice().kind === "self"
-      ? "Funds arrive at the same address on the destination network."
-      : "⚠️ Funds go to a different address than the connected wallet. Check that you control it on the destination network.";
   }
 
   selectRecipient(key: string): void {
@@ -231,7 +150,7 @@ class Bridge {
     if (this.busy || !isRouteKey(key) || key === this.routeKey) return;
     this.routeKey = key;
     this.#applyRouteDefaults();
-    if (!this.#me) return;
+    if (!this.me) return;
     void this.#run(async () => {
       await this.#ensureChain(this.route.src.chainId);
       await verifyRoute(this.route, this.#wallet().provider);
@@ -281,7 +200,7 @@ class Bridge {
 
   async max(): Promise<void> {
     await this.#run(async () => {
-      if (!this.#me || !this.#provider) throw new Error("Connect your wallet first.");
+      if (!this.me || !this.#provider) throw new Error("Connect your wallet first.");
       const r = this.route;
       await this.#ensureChain(r.src.chainId);
       const { provider: p, me: who } = this.#wallet();
@@ -375,7 +294,7 @@ class Bridge {
       const hash = this.resumeHash.trim();
       if (!isTxHash(hash))
         throw new Error("Paste a transaction hash (0x followed by 64 hex characters).");
-      if (!this.#me) throw new Error("Connect your wallet first.");
+      if (!this.me) throw new Error("Connect your wallet first.");
       await selfMintOnDestination(this.#deps(), r, hash, true);
     });
   }
@@ -495,7 +414,7 @@ class Bridge {
     try {
       const next = await fetchQuote(r, amount, quotedTo, mode.fast, mode.selfMint);
       if (seq !== this.#feeSeq || this.busy) return;
-      if (!this.#me || !this.#provider) {
+      if (!this.me || !this.#provider) {
         this.#commit(seq, {
           phase: "preview",
           body: next,
@@ -512,10 +431,7 @@ class Bridge {
         this.#commit(seq, { phase: "preview", body: next, selection, note: why });
         return;
       }
-      const allowance = await erc20(r.src.token, this.#provider).allowance(
-        this.#me,
-        r.tokenManager
-      );
+      const allowance = await erc20(r.src.token, this.#provider).allowance(this.me, r.tokenManager);
       this.#commit(seq, {
         phase: "ready",
         body: next,
@@ -539,7 +455,7 @@ class Bridge {
     const choice = this.#choice();
     if (choice.kind === "missing") return undefined;
     if (choice.kind === "book") return lib().getAddress(choice.entry.address);
-    return this.#me ?? lib().ZeroAddress;
+    return this.me ?? lib().ZeroAddress;
   }
 
   #loadBook(): AddressEntry[] {
@@ -568,9 +484,8 @@ class Bridge {
   }
 
   #wallet(): { provider: BrowserProvider; signer: JsonRpcSigner; me: string } {
-    if (!this.#provider || !this.#signer || !this.#me)
-      throw new Error("Connect your wallet first.");
-    return { provider: this.#provider, signer: this.#signer, me: this.#me };
+    if (!this.#provider || !this.#signer || !this.me) throw new Error("Connect your wallet first.");
+    return { provider: this.#provider, signer: this.#signer, me: this.me };
   }
 
   #ethereum(): NonNullable<Window["ethereum"]> {
@@ -621,9 +536,9 @@ class Bridge {
   }
 
   #recipient(): Recipient {
-    if (!this.#me) throw new Error("Connect your wallet first.");
+    if (!this.me) throw new Error("Connect your wallet first.");
     const choice = this.#choice();
-    if (choice.kind === "self") return { address: this.#me, self: true, label: "this wallet" };
+    if (choice.kind === "self") return { address: this.me, self: true, label: "this wallet" };
     if (choice.kind === "book")
       return {
         address: lib().getAddress(choice.entry.address),

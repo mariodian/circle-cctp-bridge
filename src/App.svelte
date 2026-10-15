@@ -1,39 +1,18 @@
 <script lang="ts">
   import "./app.css";
-  import { buttonVariants } from "$lib/components/ui/button/index.js";
-  import * as Card from "$lib/components/ui/card/index.js";
+  import ConnectButton from "$lib/components/ConnectButton.svelte";
+  import LogCard from "$lib/components/LogCard.svelte";
+  import ResumeCard from "$lib/components/ResumeCard.svelte";
+  import SendCard from "$lib/components/send/SendCard.svelte";
   import * as Tooltip from "$lib/components/ui/tooltip/index.js";
-  import { bridge, shortAddress } from "./bridge.svelte.js";
-  import ResumeCard from "./ResumeCard.svelte";
-  import SendCard from "./SendCard.svelte";
 </script>
 
 <Tooltip.Provider>
-  <button
-    id="connect"
-    type="button"
-    class={buttonVariants({
-      variant: "outline",
-      class: "fixed top-4 right-4 z-30 rounded-full font-mono"
-    })}
-    disabled={bridge.busy}
-    onclick={() => bridge.connect()}
-  >
-    {bridge.me ? shortAddress(bridge.me) : "Connect wallet"}
-  </button>
+  <ConnectButton />
   <div class="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-6 px-4 pt-16 pb-6">
     <SendCard />
     <ResumeCard />
-
-    {#if bridge.logText.length > 0}
-      <Card.Root>
-        <Card.Content>
-          <div id="log" class="font-mono text-[13px] break-words whitespace-pre-wrap">
-            {bridge.logText}
-          </div>
-        </Card.Content>
-      </Card.Root>
-    {/if}
+    <LogCard />
 
     <p class="text-muted-foreground text-sm">
       Unaudited personal tool, provided as is. Use it entirely at your own risk. The authors accept

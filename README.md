@@ -131,17 +131,18 @@ Official references: [Circle CCTP docs](https://developers.circle.com/cctp), [CC
 ## Files
 
 - `index.html`: the Vite shell and its Content-Security-Policy.
-- `src/App.svelte`, `src/RouteCard.svelte`, `src/TransferCard.svelte`, `src/ResumeCard.svelte`: the page.
-- `src/bridge.svelte.ts`: wallet, address book, and button actions.
-- `src/logic.ts`: the route catalog and the safety checks, covered by `bun test`.
-- `src/transfer.ts`: quotes, the burn and CCTPx send, and the mint watch.
-- `src/contracts.ts`: typed contract calls.
+- `src/App.svelte`: page shell. The send card, resume card, connect button, and log live under `src/lib/components/`.
+- `src/lib/bridge/bridge.svelte.ts`: wallet, address book, and button actions.
+- `src/lib/cctp/logic.ts`: the route catalog and the safety checks, covered by `bun test`.
+- `src/lib/cctp/transfer.ts`: quotes, the burn and CCTPx send, and the mint watch.
+- `src/lib/cctp/contracts.ts`: typed contract calls.
+- `src/lib/format.ts`: address shortening used by the page.
 - `src/app.css`: Tailwind entry and the color tokens.
 - `dist/`: the browser build. Git ignores it.
 
 ## Adding a route
 
-Routes live in the `ROUTES` object in `src/logic.ts`. Rebuild with `bun run build` after you change it. The dropdown is built from that object. A USDC route needs only the two chains (`usdcRoute(src, dst, defaultFast)`). A CCTPx route needs the token's `tokenId`, its TokenManager and the token addresses on both chains. You can list the token IDs from Circle's API (`GET https://iris-api.circle.com/v2/cctpx/tokens`). A new chain also needs an entry in `CHAINS`, including its Circle domain and fee-confirmation threshold, and its RPC host in the `connect-src` of the Content-Security-Policy in `index.html`. A route that names an unknown chain fails when the page loads. Check every new route with a small amount first.
+Routes live in the `ROUTES` object in `src/lib/cctp/logic.ts`. Rebuild with `bun run build` after you change it. The dropdown is built from that object. A USDC route needs only the two chains (`usdcRoute(src, dst, defaultFast)`). A CCTPx route needs the token's `tokenId`, its TokenManager and the token addresses on both chains. You can list the token IDs from Circle's API (`GET https://iris-api.circle.com/v2/cctpx/tokens`). A new chain also needs an entry in `CHAINS`, including its Circle domain and fee-confirmation threshold, and its RPC host in the `connect-src` of the Content-Security-Policy in `index.html`. A route that names an unknown chain fails when the page loads. Check every new route with a small amount first.
 
 ## Reporting a security issue
 

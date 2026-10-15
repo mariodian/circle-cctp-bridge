@@ -21,7 +21,9 @@ export const FINALITY_FAST = 1000;
 export const FINALITY_STANDARD = 2000;
 export const finality = (fast: boolean): number => (fast ? FINALITY_FAST : FINALITY_STANDARD);
 
-export type ChainId = 1 | 5042 | 43114;
+// From/To dialog order: Ethereum, then Arc, then Avalanche.
+export const CHAIN_IDS = [1, 5042, 43114] as const;
+export type ChainId = (typeof CHAIN_IDS)[number];
 
 export interface ChainAdd {
   chainId: string;
