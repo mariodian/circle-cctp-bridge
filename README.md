@@ -49,7 +49,7 @@ Then open <http://127.0.0.1:8000> in a browser with **Rabby** or **MetaMask**. I
 
 1. Pick the **route** and the **recipient**. The recipient is the connected wallet by default. To send to another address of yours, add it under "My other addresses" first.
 2. **Connect wallet.** The page switches your wallet to the source network and checks Circle's contracts on-chain.
-3. Enter the **amount** (or click MAX) and click **Get fee**.
+3. Enter the **amount** (or click MAX). The fee loads on its own.
 4. **Approve** the exact amount, then **Send**.
 5. If you sign the mint yourself (the default), the page waits for Circle's attestation and then switches your wallet to the destination network. There you sign `receiveMessage`, the mint. You need a little gas on the destination network for that: ETH on Ethereum, USDC on Arc, AVAX on Avalanche.
 
@@ -73,7 +73,7 @@ For EURC, cirBTC and WETH you can instead untick "I sign the mint myself". Circl
   - For EURC, cirBTC and WETH the page fetches a fresh quote right before sending. It refuses a fee that jumped by more than 50%, and asks for confirmation above a small threshold.
   - Each quote is used only once.
 - **Safe resume.** "Finish a pending transfer" checks with Circle that the transfer really goes from and to the networks of the selected route before switching networks. It stops after 2 minutes if Circle does not know the hash.
-- **Balance check.** Get fee and Send both refuse when the token balance cannot cover the amount. On Arc USDC, Send keeps at least 0.5 USDC for gas. MAX and the amount filled in on connect leave 1 USDC.
+- **Balance check.** The quote and Send both refuse when the token balance cannot cover the amount. On Arc USDC, Send keeps at least 0.5 USDC for gas. MAX and the amount filled in on connect leave 1 USDC.
 - **Strict Content-Security-Policy.**
   - No inline scripts.
   - Scripts load only from this folder.

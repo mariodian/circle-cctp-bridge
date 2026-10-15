@@ -1,30 +1,44 @@
 <script lang="ts">
   import "./app.css";
-  import { bridge } from "./bridge.svelte.js";
+  import { buttonVariants } from "$lib/components/ui/button/index.js";
+  import * as Card from "$lib/components/ui/card/index.js";
+  import * as Tooltip from "$lib/components/ui/tooltip/index.js";
+  import { bridge, shortAddress } from "./bridge.svelte.js";
   import ResumeCard from "./ResumeCard.svelte";
-  import RouteCard from "./RouteCard.svelte";
-  import TransferCard from "./TransferCard.svelte";
+  import SendCard from "./SendCard.svelte";
 </script>
 
-<h1 class="mb-1 text-[22px] font-bold">Circle CCTP Bridge</h1>
-<p class="mt-0 text-muted">
-  Move USDC, EURC, cirBTC and WETH between Arc, Ethereum and Avalanche through Circle's own
-  contracts. Circle charges no protocol fee for standard transfers. You pay only gas.
-</p>
+<Tooltip.Provider>
+  <button
+    id="connect"
+    type="button"
+    class={buttonVariants({
+      variant: "outline",
+      class: "fixed top-4 right-4 z-30 rounded-full font-mono"
+    })}
+    disabled={bridge.busy}
+    onclick={() => bridge.connect()}
+  >
+    {bridge.me ? shortAddress(bridge.me) : "Connect wallet"}
+  </button>
+  <div class="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-6 px-4 pt-16 pb-6">
+    <SendCard />
+    <ResumeCard />
 
-<RouteCard />
-<TransferCard />
-<ResumeCard />
+    {#if bridge.logText.length > 0}
+      <Card.Root>
+        <Card.Content>
+          <div id="log" class="font-mono text-[13px] break-words whitespace-pre-wrap">
+            {bridge.logText}
+          </div>
+        </Card.Content>
+      </Card.Root>
+    {/if}
 
-<div
-  class="mb-4 rounded-xl border border-line bg-card p-[18px]"
-  class:hidden={bridge.logText.length === 0}
->
-  <div id="log" class="font-mono text-[13px] break-words whitespace-pre-wrap">{bridge.logText}</div>
-</div>
-
-<p class="text-sm text-muted">
-  ⚠️ Unaudited personal tool, provided as is. Use it entirely at your own risk. The authors accept
-  no liability for any loss of funds, bugs, misuse or abuse. You are responsible for every
-  transaction you sign. Test with a small amount first. Docs: README.md.
-</p>
+    <p class="text-muted-foreground text-sm">
+      Unaudited personal tool, provided as is. Use it entirely at your own risk. The authors accept
+      no liability for any loss of funds, bugs, misuse or abuse. You are responsible for every
+      transaction you sign. Test with a small amount first.
+    </p>
+  </div>
+</Tooltip.Provider>

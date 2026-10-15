@@ -166,7 +166,7 @@ async function refreshCctpx(
   if (!validity.ok) throw new Error("Circle returned an already expired quote, click Send again.");
   const shown = lib().formatEther(fresh.fee);
   if (cctpxFeeJumped(previous.fee, fresh.fee))
-    throw new Error(`The fee jumped to ${shown}. Click 2. Get fee and check it.`);
+    throw new Error(`The fee jumped to ${shown}. Check the fee, then send again.`);
   const native = CHAINS[route.src.chainId].native;
   if (
     feeNeedsConfirm(route.src.chainId, fresh.fee) &&

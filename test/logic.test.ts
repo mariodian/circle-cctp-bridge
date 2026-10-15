@@ -28,6 +28,9 @@ import {
   finality,
   quoteStillMatches,
   routeLabel,
+  routeMatching,
+  routeTime,
+  symbolsOn,
   selfMintLocked,
   spendError,
   transferMode,
@@ -228,6 +231,31 @@ test("every route points at a known domain, token, and manager", () => {
   expect(ROUTES.eurc_arc_eth.tokenId).toBe(EURC.tokenId);
   expect(ROUTES.cirbtc_eth_arc.tokenManager).toBe(CIRBTC.manager);
   expect(ROUTES.weth_arc_eth.src.token).toBe(WETH[5042] ?? "");
+});
+
+test("route time follows the source chain and the token kind", () => {
+  expect(routeTime(ROUTES.usdc_eth_arc, false)).toBe("~15–20 min");
+  expect(routeTime(ROUTES.usdc_eth_arc, true)).toBe("seconds");
+  expect(routeTime(ROUTES.usdc_av_arc, true)).toBe("seconds");
+  expect(routeTime(ROUTES.usdc_arc_eth, false)).toBe("seconds");
+  expect(routeTime(ROUTES.eurc_arc_eth, false)).toBe("seconds to minutes");
+  expect(routeTime(ROUTES.cirbtc_eth_arc, false)).toBe("~15–20 min");
+  expect(routeTime(ROUTES.cirbtc_eth_arc, true)).toBe("faster");
+  expect(routeTime(ROUTES.weth_eth_arc, true)).toBe("faster");
+  expect(routeTime(ROUTES.weth_arc_eth, false)).toBe("seconds to minutes");
+});
+
+test("editing one side keeps the other endpoint when that pair exists", () => {
+  expect(symbolsOn("src", 1)).toEqual(["USDC", "cirBTC", "WETH"]);
+  expect(symbolsOn("src", 43114)).toEqual(["USDC"]);
+  expect(symbolsOn("dst", 43114)).toEqual([]);
+  expect(routeMatching("usdc_eth_arc", "src", 43114, "USDC")).toBe("usdc_av_arc");
+  expect(routeMatching("usdc_av_eth", "src", 1, "USDC")).toBe("usdc_eth_arc");
+  expect(routeMatching("usdc_eth_arc", "src", 1, "WETH")).toBe("weth_eth_arc");
+  expect(routeMatching("usdc_eth_arc", "src", 1, "cirBTC")).toBe("cirbtc_eth_arc");
+  expect(routeMatching("usdc_arc_eth", "src", 5042, "EURC")).toBe("eurc_arc_eth");
+  expect(routeMatching("usdc_eth_arc", "dst", 1, "USDC")).toBe("usdc_av_eth");
+  expect(routeMatching("usdc_eth_arc", "dst", 43114, "USDC")).toBeUndefined();
 });
 
 test("validEntry rejects values that are not an address book object", () => {

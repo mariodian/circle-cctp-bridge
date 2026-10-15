@@ -7,7 +7,7 @@ export const TOKEN_MINTER_V2 = "0xfd78EE919681417d192449715b2594ab58f5D002";
 export const MESSAGE_TRANSMITTER = "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64";
 
 // Arc USDC is the gas token. MAX and the amount filled in on connect leave ARC_MAX_RESERVE.
-// Get fee and Send refuse when less than ARC_SPEND_RESERVE would remain.
+// The quote and Send refuse when less than ARC_SPEND_RESERVE would remain.
 export const ARC_MAX_RESERVE = 1_000000n;
 export const ARC_SPEND_RESERVE = 500000n;
 export const MAX_USDC_FEE_BPS = 20;
@@ -217,6 +217,41 @@ export const ROUTES = {
 
 export type RouteKey = keyof typeof ROUTES;
 
+// Symbols that already have a route on this side of the chain, in route-table order.
+export function symbolsOn(side: "src" | "dst", chainId: ChainId): string[] {
+  const seen = new Set<string>();
+  const symbols: string[] = [];
+  for (const route of Object.values(ROUTES)) {
+    if (route[side].chainId !== chainId || seen.has(route.symbol)) continue;
+    seen.add(route.symbol);
+    symbols.push(route.symbol);
+  }
+  return symbols;
+}
+
+// Route for the endpoint being edited. Keeps the other endpoint when that pair exists.
+export function routeMatching(
+  current: RouteKey,
+  side: "src" | "dst",
+  chainId: ChainId,
+  symbol: string
+): RouteKey | undefined {
+  const hold = ROUTES[current];
+  const other = side === "src" ? "dst" : "src";
+  const matches = (Object.entries(ROUTES) as [RouteKey, Route][]).filter(
+    ([, route]) => route[side].chainId === chainId && route.symbol === symbol
+  );
+  const kept = matches.find(([, route]) => route[other].chainId === hold[other].chainId);
+  return (kept ?? matches[0])?.[0];
+}
+
+// Attestation wait from the route table in README.md. Ethereum is the slow source.
+export function routeTime(r: Route, fast: boolean): string {
+  if (r.src.chainId !== 1) return r.kind === "usdc" ? "seconds" : "seconds to minutes";
+  if (!fast) return "~15–20 min";
+  return r.kind === "usdc" ? "seconds" : "faster";
+}
+
 const ZERO = "0x0000000000000000000000000000000000000000";
 // Anything this app treats as a contract is not a wallet. Tokens sent there are lost.
 export const NOT_A_RECIPIENT = new Set(
@@ -262,7 +297,7 @@ export function maxFillNote(r: Route): string {
 }
 
 // Null when the balance covers the amount and the Arc spend floor.
-// Get fee and Send both call this. Callers do not add their own chain check.
+// The quote and Send both call this. Callers do not add their own chain check.
 export function spendError(r: Route, amount: bigint, bal: bigint): string | null {
   if (bal < amount) return `Not enough ${r.symbol}.`;
   if (arcUsdc(r) && bal - amount < ARC_SPEND_RESERVE) {
