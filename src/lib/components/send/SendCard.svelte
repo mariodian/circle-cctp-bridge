@@ -17,6 +17,72 @@
   const swapped = $derived(reverseRoute(bridge.routeKey));
   const amountError = $derived(bridge.feeNote?.reason ? bridge.feeNote.text : "");
   const formError = $derived(bridge.feeNote && !bridge.feeNote.reason ? bridge.feeNote.text : "");
+
+  const AMOUNT_MAX_PX = 48;
+  const AMOUNT_MIN_PX = 24;
+  let amtRef = $state<HTMLInputElement | null>(null);
+  let measure: CanvasRenderingContext2D | null = null;
+  let sheet: CSSStyleSheet | undefined;
+
+  // script-src already trusts this page, so a constructable sheet can set the size.
+  // A style attribute cannot: production CSP is style-src 'self'.
+  function applySize(size: number) {
+    sheet ??= new CSSStyleSheet();
+    if (!document.adoptedStyleSheets.includes(sheet)) {
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    }
+    sheet.replaceSync(`input#amt { font-size: ${size}px }`);
+  }
+
+  function textWidth(style: CSSStyleDeclaration, px: number, text: string) {
+    if (!measure) return 0;
+    measure.font = style.font.replace(/(\d+(?:\.\d+)?)px/, `${px}px`);
+    const spacing = style.letterSpacing === "normal" ? 0 : parseFloat(style.letterSpacing);
+    const extra = Number.isFinite(spacing) ? spacing * Math.max(0, text.length - 1) : 0;
+    return measure.measureText(text).width + extra;
+  }
+
+  function fitAmount() {
+    const el = amtRef;
+    if (!el || el.clientWidth === 0) return;
+    measure ??= document.createElement("canvas").getContext("2d");
+    if (!measure) return;
+    const style = getComputedStyle(el);
+    const pad = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    const room = el.clientWidth - (Number.isFinite(pad) ? pad : 0);
+    const text = el.value;
+    if (text === "") {
+      applySize(AMOUNT_MAX_PX);
+      return;
+    }
+    const full = textWidth(style, AMOUNT_MAX_PX, text);
+    let size =
+      full <= room
+        ? AMOUNT_MAX_PX
+        : Math.max(AMOUNT_MIN_PX, Math.floor((AMOUNT_MAX_PX * room) / full));
+    while (size > AMOUNT_MIN_PX && textWidth(style, size, text) > room) size -= 1;
+    applySize(size);
+  }
+
+  $effect(() => {
+    bridge.amount;
+    fitAmount();
+  });
+
+  $effect(() => {
+    const el = amtRef;
+    if (!el) return;
+    const observer = new ResizeObserver(() => fitAmount());
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
+
+  $effect(() => {
+    return () => {
+      if (!sheet) return;
+      document.adoptedStyleSheets = document.adoptedStyleSheets.filter((item) => item !== sheet);
+    };
+  });
 </script>
 
 <Card.Root>
@@ -49,7 +115,8 @@
           autocomplete="off"
           disabled={bridge.busy}
           bind:value={bridge.amount}
-          class="h-auto border-0 bg-transparent px-0 text-5xl font-medium shadow-none focus-visible:ring-0 md:text-5xl"
+          bind:ref={amtRef}
+          class="h-auto border-0 bg-transparent px-0 font-medium shadow-none focus-visible:ring-0"
         />
         <span class="text-muted-foreground pb-2 text-2xl" id="sym">{bridge.route.symbol}</span>
       </div>
@@ -112,3 +179,11 @@
     </div>
   </Card.Content>
 </Card.Root>
+
+<style>
+  /* :global because #amt is the root of the Input child. Size comes from the adopted sheet. */
+  :global(#amt) {
+    font-size: 48px;
+    line-height: 1.1;
+  }
+</style>
