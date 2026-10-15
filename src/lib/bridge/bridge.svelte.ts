@@ -58,13 +58,14 @@ export type Holding = {
   kind: "native" | "token";
   symbol: string;
   amount: string;
+  raw: bigint;
 };
 
 export type Holdings =
   | { phase: "idle" }
-  | { phase: "loading" }
-  | { phase: "error" }
-  | { phase: "ready"; native: string; rows: Holding[] };
+  | { phase: "loading"; account: string; chainId: number }
+  | { phase: "error"; account: string; chainId: number }
+  | { phase: "ready"; account: string; chainId: number; native: string; rows: Holding[] };
 
 type WalletEvents = {
   on: (event: string, cb: (accounts: unknown) => void) => void;
@@ -133,12 +134,14 @@ class Bridge {
   #signer: JsonRpcSigner | undefined;
   #offWallet: (() => void) | undefined;
   // Bumped on disconnect and at the start of every background wallet read.
-  // A read publishes only when it still owns this value.
+  // A wallet read publishes only when it still owns this value.
   #live = 0;
   // Account or chain changed during #run. Follow the wallet once busy clears.
   #resync = false;
-  #holdingsFor: string | undefined;
-  #holdingsLive = 0;
+  // Portfolio reads. Independent of #live, so a send cannot discard or clobber one.
+  #portfolioGen = 0;
+  #portfolioKey: string | undefined;
+  #portfolioTask: Promise<void> = Promise.resolve();
   // Displayed quote. #invalidateQuote owns every exit. #commit publishes a fetch. Send replaces body only.
   #fee = $state<FeeState>({ phase: "idle", note: "" });
   #feeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -316,7 +319,7 @@ class Bridge {
       const tx = await weth(r.src.token, s).deposit({ value: amount });
       this.log("Wrap sent: " + CHAINS[r.src.chainId].explorer + tx.hash);
       await tx.wait();
-      await this.#refreshBalances();
+      await this.reloadPortfolio();
       this.log("Wrap confirmed.");
     });
   }
@@ -628,9 +631,31 @@ class Bridge {
     this.#provider = undefined;
     this.#signer = undefined;
     this.balanceText = "";
+    this.#portfolioGen += 1;
+    this.#portfolioKey = undefined;
     this.holdings = { phase: "idle" };
-    this.#holdingsFor = undefined;
-    this.#holdingsLive = 0;
+  }
+
+  #session(): WalletSession | undefined {
+    const provider = this.#provider;
+    const signer = this.#signer;
+    const account = this.#me;
+    const chainId = this.#chainId;
+    if (!provider || !signer || !account || chainId === undefined) return undefined;
+    return { provider, signer, account, chainId };
+  }
+
+  // Route dialog and wrap. Always reads again. The send line follows the same snapshot.
+  async reloadPortfolio(): Promise<void> {
+    const session = this.#session();
+    if (!session) {
+      this.#portfolioGen += 1;
+      this.#portfolioKey = undefined;
+      this.holdings = { phase: "idle" };
+      return;
+    }
+    this.#reloadHoldings(session);
+    await this.#waitPortfolio();
   }
 
   // Reads the injected wallet and writes nothing.
@@ -642,22 +667,38 @@ class Bridge {
     return { provider, signer, account, chainId: Number(net.chainId) };
   }
 
-  // Only writer of the wallet session. Reloads holdings when the account or chain changes.
+  // Only writer of a connected wallet session.
+  // Skips the portfolio when this account and chain are already on screen.
   #publish(session: WalletSession): void {
-    const live = this.#live;
-    const key = sessionKey(session);
     this.#provider = session.provider;
     this.#signer = session.signer;
     this.#me = session.account;
     this.#chainId = session.chainId;
-    const same = this.#holdingsFor === key;
-    if (same && (this.#holdingsLive === live || this.holdings.phase === "ready")) {
-      this.#holdingsLive = live;
+    const book = this.holdings;
+    if (
+      sessionKey(session) === this.#portfolioKey &&
+      book.phase === "ready" &&
+      book.account === session.account &&
+      book.chainId === session.chainId
+    ) {
+      this.#syncBalanceText();
       return;
     }
-    this.#holdingsFor = key;
-    this.#holdingsLive = live;
-    void this.#loadPortfolio(session, live, key);
+    this.#reloadHoldings(session);
+  }
+
+  #reloadHoldings(session: WalletSession): void {
+    const gen = ++this.#portfolioGen;
+    this.#portfolioKey = sessionKey(session);
+    this.#portfolioTask = this.#loadPortfolio(session, gen);
+  }
+
+  async #waitPortfolio(): Promise<void> {
+    for (;;) {
+      const task = this.#portfolioTask;
+      await task;
+      if (task === this.#portfolioTask) return;
+    }
   }
 
   // eth_accounts first so a locked or revoked wallet does not prompt.
@@ -699,8 +740,11 @@ class Bridge {
     }
     await verifyRoute(this.route, this.#wallet().provider);
     if (live !== this.#live) return;
-    const bal = await this.#refreshBalances();
+    await this.#waitPortfolio();
     if (live !== this.#live) return;
+    this.#syncBalanceText();
+    const bal = this.#sourceRow()?.raw;
+    if (bal === undefined) return;
     if (fill === "keep") return;
     if (fill === "always" || !this.amount.trim())
       this.amount = lib().formatUnits(
@@ -736,19 +780,42 @@ class Bridge {
     this.#publish(session);
   }
 
-  async #refreshBalances(): Promise<bigint> {
-    const { provider: p, me: who } = this.#wallet();
-    const r = this.route;
-    const bal = await erc20(r.src.token, p).balanceOf(who);
-    const gas = await p.getBalance(who);
-    const amount = lib().formatUnits(bal, r.decimals);
-    this.balanceText = `You have ${amount} ${r.symbol} on ${CHAINS[r.src.chainId].name} · ${lib().formatEther(gas)} ${CHAINS[r.src.chainId].native} for gas`;
-    return bal;
+  // Send line for the route source. A settled read for any other chain clears it.
+  #syncBalanceText(): void {
+    const book = this.holdings;
+    const route = this.route;
+    if (book.phase === "idle" || book.phase === "loading" || book.account !== this.#me) return;
+    const token = this.#sourceRow();
+    const gas = book.phase === "ready" ? book.rows.find((row) => row.kind === "native") : undefined;
+    if (!token || !gas) {
+      this.balanceText = "";
+      return;
+    }
+    const chain = CHAINS[route.src.chainId];
+    this.balanceText =
+      `You have ${token.amount} ${route.symbol} on ${chain.name}` +
+      ` · ${gas.amount} ${chain.native} for gas`;
+  }
+
+  // Route-source row once the portfolio is ready for that account and chain.
+  #sourceRow(): Holding | undefined {
+    const book = this.holdings;
+    const route = this.route;
+    if (book.phase !== "ready" || book.account !== this.#me || book.chainId !== route.src.chainId)
+      return undefined;
+    const token = route.src.token.toLowerCase();
+    return book.rows.find((row) => row.kind === "token" && row.id.toLowerCase() === token);
   }
 
   // Native gas plus each token this app bridges on the wallet's current chain.
-  async #loadPortfolio(session: WalletSession, live: number, key: string): Promise<void> {
-    this.holdings = { phase: "loading" };
+  async #loadPortfolio(session: WalletSession, gen: number): Promise<void> {
+    const shown = this.holdings;
+    const keep =
+      shown.phase === "ready" &&
+      shown.account === session.account &&
+      shown.chainId === session.chainId;
+    if (!keep)
+      this.holdings = { phase: "loading", account: session.account, chainId: session.chainId };
     try {
       const chainId = session.chainId;
       const known = isChainId(chainId);
@@ -760,19 +827,34 @@ class Bridge {
           assets.map((asset) => erc20(asset.token, session.provider).balanceOf(session.account))
         )
       ]);
-      if (live !== this.#live || this.#holdingsFor !== key) return;
+      if (gen !== this.#portfolioGen) return;
       const rows: Holding[] = [
-        { id: "native", kind: "native", symbol: native, amount: lib().formatEther(gas) }
+        {
+          id: "native",
+          kind: "native",
+          symbol: native,
+          amount: lib().formatEther(gas),
+          raw: gas
+        }
       ];
-      assets.forEach((asset, i) => {
-        const amount = lib().formatUnits(bals[i] ?? 0n, asset.decimals);
-        if (amount === "0") return;
-        rows.push({ id: asset.token, kind: "token", symbol: asset.symbol, amount });
-      });
-      this.holdings = { phase: "ready", native, rows };
+      for (let i = 0; i < assets.length; i++) {
+        const asset = assets[i];
+        const bal = bals[i];
+        if (!asset || bal === undefined) continue;
+        rows.push({
+          id: asset.token,
+          kind: "token",
+          symbol: asset.symbol,
+          amount: lib().formatUnits(bal, asset.decimals),
+          raw: bal
+        });
+      }
+      this.holdings = { phase: "ready", account: session.account, chainId, native, rows };
+      this.#syncBalanceText();
     } catch {
-      if (live !== this.#live || this.#holdingsFor !== key) return;
-      this.holdings = { phase: "error" };
+      if (gen !== this.#portfolioGen) return;
+      this.holdings = { phase: "error", account: session.account, chainId: session.chainId };
+      this.#syncBalanceText();
     }
   }
 

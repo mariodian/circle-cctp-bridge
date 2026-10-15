@@ -4,12 +4,35 @@
   import * as Dialog from "$lib/components/ui/dialog/index.js";
   import { ScrollArea } from "$lib/components/ui/scroll-area/index.js";
   import { Separator } from "$lib/components/ui/separator/index.js";
+  import { Skeleton } from "$lib/components/ui/skeleton/index.js";
   import { bridge } from "$lib/bridge/bridge.svelte.js";
   import { CHAINS, CHAIN_IDS, routeMatching, symbolsOn, type ChainId } from "$lib/cctp/logic.js";
 
   let { title, side }: { title: string; side: "src" | "dst" } = $props();
 
   let open = $state(false);
+
+  // Do not load from an $effect. reloadPortfolio writes holdings, and an effect that
+  // called it would track that write and run forever.
+  // This callback is the only writer of `open`. bits-ui reports the next value here.
+  function onOpenChange(next: boolean): void {
+    open = next;
+    if (next) void bridge.reloadPortfolio();
+  }
+
+  // Amount on the wallet's current chain. Other chains, and a failed read, are empty.
+  function pickerAmount(
+    chainId: ChainId,
+    symbol: string
+  ): { kind: "amount"; text: string } | { kind: "loading" } | { kind: "empty" } {
+    const book = bridge.holdings;
+    if (book.phase === "idle" || book.chainId !== chainId || book.account !== bridge.me)
+      return { kind: "empty" };
+    if (book.phase === "loading") return { kind: "loading" };
+    if (book.phase === "error") return { kind: "empty" };
+    const row = book.rows.find((item) => item.kind === "token" && item.symbol === symbol);
+    return row ? { kind: "amount", text: row.amount } : { kind: "empty" };
+  }
 
   function choose(chainId: ChainId, symbol: string): void {
     const key = routeMatching(bridge.routeKey, side, chainId, symbol);
@@ -19,7 +42,7 @@
   }
 </script>
 
-<Dialog.Root bind:open>
+<Dialog.Root {open} {onOpenChange}>
   <Dialog.Trigger
     class={buttonVariants({
       variant: "outline",
@@ -49,11 +72,21 @@
                 {#each symbols as symbol (symbol)}
                   <Button
                     variant="ghost"
-                    class="justify-start"
+                    class="h-auto w-full justify-between px-2"
                     disabled={bridge.busy}
                     onclick={() => choose(chainId, symbol)}
                   >
-                    {symbol}
+                    <span>{symbol}</span>
+                    {#if bridge.me}
+                      {@const amount = pickerAmount(chainId, symbol)}
+                      {#if amount.kind === "amount"}
+                        <span class="text-muted-foreground font-mono text-xs">{amount.text}</span>
+                      {:else if amount.kind === "loading"}
+                        <Skeleton class="h-3 w-14" />
+                      {:else}
+                        <span class="text-muted-foreground text-xs">—</span>
+                      {/if}
+                    {/if}
                   </Button>
                 {/each}
               </div>

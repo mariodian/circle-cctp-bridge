@@ -48,8 +48,11 @@
       {#if bridge.holdings.phase === "error"}
         <p class="text-muted-foreground">Balance unavailable on this network.</p>
       {:else if bridge.holdings.phase === "ready"}
+        {@const rows = bridge.holdings.rows.filter(
+          (row) => row.kind === "native" || row.raw !== 0n
+        )}
         <ul class="flex flex-col gap-3">
-          {#each bridge.holdings.rows as row (row.id)}
+          {#each rows as row (row.id)}
             <li class="flex items-baseline justify-between gap-4">
               <span class="text-muted-foreground">
                 {holdingLabel(row.kind, row.symbol, bridge.holdings.native)}
