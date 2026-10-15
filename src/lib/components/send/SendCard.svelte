@@ -12,6 +12,7 @@
   import QuoteSummary from "./QuoteSummary.svelte";
   import RecipientDialog from "./RecipientDialog.svelte";
   import RouteDialog from "./RouteDialog.svelte";
+  import WrapDialog from "./WrapDialog.svelte";
 
   const swapped = $derived(reverseRoute(bridge.routeKey));
   const amountError = $derived(bridge.feeNote?.reason ? bridge.feeNote.text : "");
@@ -90,12 +91,7 @@
 
     <div class="flex flex-wrap gap-2">
       {#if bridge.canWrap}
-        <Button
-          id="wrap"
-          variant="secondary"
-          disabled={bridge.busy || !bridge.wrapOn}
-          onclick={() => bridge.wrap()}>Wrap ETH</Button
-        >
+        <WrapDialog />
       {/if}
       <Button
         id="approve"

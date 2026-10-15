@@ -17,6 +17,9 @@ export const FEE_JUMP_SLACK = E18 / 10_000n;
 // ETH left aside when MAX fills a wrap, and the minimum that must remain after it.
 export const WRAP_MAX_RESERVE = (12n * E18) / 1000n; // 0.012 ETH
 export const WRAP_MIN_LEFT = (5n * E18) / 1000n; // 0.005 ETH
+// Balance left after a Max fill. Zero when the balance does not cover the reserve.
+export const fillable = (bal: bigint, reserve: bigint): bigint =>
+  bal > reserve ? bal - reserve : 0n;
 export const FINALITY_FAST = 1000;
 export const FINALITY_STANDARD = 2000;
 export const finality = (fast: boolean): number => (fast ? FINALITY_FAST : FINALITY_STANDARD);

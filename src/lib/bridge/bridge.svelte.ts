@@ -7,6 +7,7 @@ import {
   assetsOn,
   fastAllowed,
   fastLabel,
+  fillable,
   isChainId,
   isTxHash,
   maxFillReserve,
@@ -48,8 +49,6 @@ function errorCode(e: unknown): number | undefined {
 }
 
 const wraps = (r: Route): boolean => r.kind === "cctpx" && !!r.canWrap;
-
-const fillable = (bal: bigint, reserve: bigint): bigint => (bal > reserve ? bal - reserve : 0n);
 
 export type RecipientKey = "self" | `0x${string}`;
 
@@ -128,7 +127,7 @@ class Bridge {
   resumeHash = $state("");
   balanceText = $state("");
   logText = $state("");
-  // Failures from send, approve, wrap, resume, and wallet follow. Shown under Send.
+  // Connect, route change, max, approve, send, resume, and a failed wallet follow. Shown under Send.
   actionError = $state("");
   // Address-book add and save failures. Shown in that dialog.
   bookError = $state("");
@@ -334,14 +333,13 @@ class Bridge {
     });
   }
 
-  async wrap(): Promise<void> {
-    await this.#run(async () => {
+  // undefined when the deposit finished. A string when it did not, "" if the wallet was busy.
+  async wrap(amount: bigint): Promise<string | undefined> {
+    return this.#attempt(async () => {
       const r = this.route;
       if (!wraps(r)) throw new Error("Wrapping is only for the WETH Ethereum → Arc route.");
       await this.#ensureChain(r.src.chainId);
       const { provider: p, signer: s, me: who } = this.#wallet();
-      const amount = this.#amountUnits();
-      if (amount <= 0n) throw new Error("Enter the amount of ETH to wrap.");
       const eth = await p.getBalance(who);
       const native = CHAINS[r.src.chainId].native;
       if (eth - amount < WRAP_MIN_LEFT)
@@ -942,17 +940,26 @@ class Bridge {
     };
   }
 
+  // Clears the send-card error only when this call starts. A busy return leaves it.
   async #run(fn: () => Promise<void>): Promise<void> {
     if (this.busy) return;
-    this.busy = true;
     this.actionError = "";
+    const error = await this.#attempt(fn);
+    if (error) this.actionError = error;
+  }
+
+  // undefined when the body finished. "" when the wallet was already busy. Otherwise the caught message.
+  async #attempt(fn: () => Promise<void>): Promise<string | undefined> {
+    if (this.busy) return "";
+    this.busy = true;
     // Drop a background wallet read and sendable quote state before the first await.
     this.#live += 1;
     this.#invalidateQuote();
     try {
       await fn();
+      return undefined;
     } catch (e) {
-      this.actionError = errorText(e);
+      return errorText(e);
     } finally {
       this.busy = false;
       this.#invalidateQuote();

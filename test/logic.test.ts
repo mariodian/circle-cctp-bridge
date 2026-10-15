@@ -20,6 +20,7 @@ import {
   WETH,
   WRAP_MAX_RESERVE,
   WRAP_MIN_LEFT,
+  fillable,
   badLabel,
   cctpxFeeJumped,
   cleanLabel,
@@ -157,8 +158,14 @@ test("transfer mode locks USDC self-mint and fast off Ethereum", () => {
     if (!fastAllowed(r)) expect(mode.fast).toBe(false);
     if (selfMintLocked(r)) expect(mode.selfMint).toBe(true);
   }
+});
+
+test("fillable leaves the reserve and nothing when the balance does not cover it", () => {
   expect(WRAP_MAX_RESERVE).toBe(12_000_000_000_000_000n);
   expect(WRAP_MIN_LEFT).toBe(5_000_000_000_000_000n);
+  expect(fillable(WRAP_MAX_RESERVE + 1n, WRAP_MAX_RESERVE)).toBe(1n);
+  expect(fillable(WRAP_MAX_RESERVE, WRAP_MAX_RESERVE)).toBe(0n);
+  expect(fillable(0n, WRAP_MAX_RESERVE)).toBe(0n);
 });
 
 test("USDC max fee ceils fractional bps and doubles for fast", () => {
