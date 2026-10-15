@@ -3,9 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test"
+    "test": "bun test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
-    "ethers": "6.13.2"
+    "ethers": "6.13.2",
+    "prettier": "^3.9.10"
   }
 }
