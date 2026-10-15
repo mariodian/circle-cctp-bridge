@@ -136,7 +136,6 @@ Official references: [Circle CCTP docs](https://developers.circle.com/cctp), [CC
 - `index.html`: the page with its Content-Security-Policy.
 - `app.js`: the page.
 - `logic.mjs`: the safety checks, also covered by `bun test`.
-- `docs/behavior.md`: the rules those checks implement.
 - `style.css`: the styles.
 
 ## Adding a route
