@@ -36,17 +36,14 @@ Wallet extensions do not inject into `file://` pages reliably, so serve the fold
 ```bash
 git clone https://github.com/wilderko/circle-cctp-bridge.git
 cd circle-cctp-bridge
+bun install
+bun run build
 python3 -m http.server 8000 --bind 127.0.0.1
 ```
 
 Then open <http://127.0.0.1:8000> in a browser with **Rabby** or **MetaMask**. Ideally use a hardware wallet as the signer.
 
-The safety checks have a Bun test suite. Install and run them with Bun:
-
-```bash
-bun install
-bun test
-```
+`bun run build` writes `dist/app.js` and `dist/logic.js`. That folder is gitignored. Run the build again after you change `src/`. `bun test` covers the safety checks, and `bun run check` typechecks.
 
 ## How a transfer works
 
@@ -134,13 +131,14 @@ Official references: [Circle CCTP docs](https://developers.circle.com/cctp), [CC
 ## Files
 
 - `index.html`: the page with its Content-Security-Policy.
-- `app.js`: the page.
-- `logic.mjs`: the safety checks, also covered by `bun test`.
+- `src/app.ts`: the page. `bun run build` writes `dist/app.js`, which `index.html` loads.
+- `src/logic.ts`: the safety checks, also covered by `bun test`. The build writes `dist/logic.js`.
+- `dist/`: the browser build. Git ignores it.
 - `style.css`: the styles.
 
 ## Adding a route
 
-Routes live in the `ROUTES` object in `logic.mjs`. The dropdown is built from that object. A USDC route needs only the two chains (`usdcRoute(src, dst, defaultFast)`). A CCTPx route needs the token's `tokenId`, its TokenManager and the token addresses on both chains. You can list the token IDs from Circle's API (`GET https://iris-api.circle.com/v2/cctpx/tokens`). A new chain also needs an entry in `CHAINS`, including its Circle domain and fee-confirmation threshold, and its RPC host in the `connect-src` of the Content-Security-Policy in `index.html`. A route that names an unknown chain fails when the page loads. Check every new route with a small amount first.
+Routes live in the `ROUTES` object in `src/logic.ts`. Rebuild with `bun run build` after you change it. The dropdown is built from that object. A USDC route needs only the two chains (`usdcRoute(src, dst, defaultFast)`). A CCTPx route needs the token's `tokenId`, its TokenManager and the token addresses on both chains. You can list the token IDs from Circle's API (`GET https://iris-api.circle.com/v2/cctpx/tokens`). A new chain also needs an entry in `CHAINS`, including its Circle domain and fee-confirmation threshold, and its RPC host in the `connect-src` of the Content-Security-Policy in `index.html`. A route that names an unknown chain fails when the page loads. Check every new route with a small amount first.
 
 ## Reporting a security issue
 

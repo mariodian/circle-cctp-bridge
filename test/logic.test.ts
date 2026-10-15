@@ -37,10 +37,10 @@ import {
   maxFillSuffix,
   usdcRoute,
   validEntry
-} from "../logic.mjs";
+} from "../src/logic.js";
 
 const WALLET = "0x1111111111111111111111111111111111111111";
-const entry = (e) => validEntry(e, ethers.getAddress);
+const entry = (e: { label?: unknown; address?: unknown }) => validEntry(e, ethers.getAddress);
 
 test("cleanLabel keeps words and drops the rest", () => {
   expect(cleanLabel("  Home   safe!  ")).toBe("Home safe");
@@ -65,9 +65,10 @@ test("validEntry accepts a labelled wallet and rejects the rest", () => {
     }
   });
 
-  const reject = (e) => {
+  const reject = (e: { label?: unknown; address?: unknown }) => {
     const result = entry(e);
     expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a rejected entry");
     return result.error;
   };
   expect(reject({ label: "0x friend", address: WALLET })).toMatch(/no addresses/);
@@ -219,5 +220,5 @@ test("every route points at a known domain, token, and manager", () => {
   expect(wrap).toEqual(["weth_eth_arc"]);
   expect(ROUTES.eurc_arc_eth.tokenId).toBe(EURC.tokenId);
   expect(ROUTES.cirbtc_eth_arc.tokenManager).toBe(CIRBTC.manager);
-  expect(ROUTES.weth_arc_eth.src.token).toBe(WETH[5042]);
+  expect(ROUTES.weth_arc_eth.src.token).toBe(WETH[5042] ?? "");
 });

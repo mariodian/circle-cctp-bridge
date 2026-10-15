@@ -19,9 +19,30 @@ export const WRAP_MAX_RESERVE = (12n * E18) / 1000n; // 0.012 ETH
 export const WRAP_MIN_LEFT = (5n * E18) / 1000n; // 0.005 ETH
 export const FINALITY_FAST = 1000;
 export const FINALITY_STANDARD = 2000;
-export const finality = (fast) => (fast ? FINALITY_FAST : FINALITY_STANDARD);
+export const finality = (fast: boolean): number => (fast ? FINALITY_FAST : FINALITY_STANDARD);
 
-export const CHAINS = {
+export type ChainId = 1 | 5042 | 43114;
+
+export interface ChainAdd {
+  chainId: string;
+  chainName: string;
+  rpcUrls: string[];
+  nativeCurrency: { name: string; symbol: string; decimals: number };
+  blockExplorerUrls: string[];
+}
+
+export interface Chain {
+  name: string;
+  domain: number;
+  hex: string;
+  rpc: string;
+  native: string;
+  explorer: string;
+  feeConfirm: bigint;
+  add?: ChainAdd;
+}
+
+export const CHAINS: Record<ChainId, Chain> = {
   1: {
     name: "Ethereum",
     domain: 0,
@@ -65,59 +86,106 @@ export const CHAINS = {
   }
 };
 
-// One record owns the name, the Circle domain, and the fee-confirmation threshold.
-// Route builders call this, so a missing or incomplete chain fails while ROUTES is built.
-function chain(id) {
-  const c = CHAINS[id];
-  if (!c || c.domain === undefined || c.feeConfirm === undefined)
-    throw new Error(`Unknown chain ${id}.`);
-  return c;
+function isChainId(id: number): id is ChainId {
+  return Object.prototype.hasOwnProperty.call(CHAINS, id);
 }
 
-export const USDC = {
+// One record owns the name, the Circle domain, and the fee-confirmation threshold.
+// Route builders call this, so a missing or incomplete chain fails while ROUTES is built.
+function chain(id: number): Chain {
+  if (!isChainId(id)) throw new Error(`Unknown chain ${id}.`);
+  return CHAINS[id];
+}
+
+export const USDC: Record<ChainId, string> = {
   1: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
   5042: "0x3600000000000000000000000000000000000000",
   43114: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E"
 };
 
-export const usdcRoute = (src, dst, defaultFast) => ({
-  kind: "usdc",
-  symbol: "USDC",
-  decimals: 6,
-  src: { chainId: src, domain: chain(src).domain, token: USDC[src] },
-  dst: { chainId: dst, domain: chain(dst).domain, token: USDC[dst] },
-  tokenManager: TOKEN_MESSENGER_V2,
-  defaultFast,
-  defaultSelfMint: true
-});
+export interface Endpoint {
+  chainId: ChainId;
+  domain: number;
+  token: string;
+}
 
-export const WETH = {
+export interface Route {
+  kind: "usdc" | "cctpx";
+  symbol: string;
+  decimals: number;
+  src: Endpoint;
+  dst: Endpoint;
+  tokenManager: string;
+  defaultFast: boolean;
+  defaultSelfMint: boolean;
+  tokenId?: string;
+  canWrap?: boolean;
+}
+
+export function usdcRoute(src: number, dst: number, defaultFast: boolean): Route {
+  const srcChain = chain(src);
+  const dstChain = chain(dst);
+  if (!isChainId(src) || !isChainId(dst)) throw new Error(`Unknown chain ${src}.`);
+  return {
+    kind: "usdc",
+    symbol: "USDC",
+    decimals: 6,
+    src: { chainId: src, domain: srcChain.domain, token: USDC[src] },
+    dst: { chainId: dst, domain: dstChain.domain, token: USDC[dst] },
+    tokenManager: TOKEN_MESSENGER_V2,
+    defaultFast,
+    defaultSelfMint: true
+  };
+}
+
+export interface TokenBook {
+  tokenId: string;
+  manager: string;
+  1?: string;
+  5042?: string;
+  43114?: string;
+}
+
+export const WETH: TokenBook = {
   tokenId: "0x5c2cf12eccf48ab63313169ce192dc00af7c37a58bbc546ba4becf54df4962ea",
   manager: "0x8b86d0a92d779bbcc3208a98df0ab1926b3ac4dd",
   1: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
   5042: "0x128cC466B61f542da60c70e3aA11c10e19B84EDB"
 };
-export const CIRBTC = {
+export const CIRBTC: TokenBook = {
   tokenId: "0x3d26699fb5d40190fc3fa0dcbc1cd24e558355043c1997572ff9fd6efbb3fdca",
   manager: "0xa1db0fda2d1bfebe2e5701fe73b252bc2b25700e",
   1: "0x72DFB2E44f59C5AD2bAFE84314E5b99a7cd5075E",
   5042: "0x171A4217b86A807A64eB94757Db6849fb4bDbAA0"
 };
-export const EURC = {
+export const EURC: TokenBook = {
   tokenId: "0x6ca9e29fa53becc29becaf4a90b9ca7a995ad4d2234880da13ca38c657fb241c",
   manager: "0x8c27579e24f9f19d96724e19fc059dacd1469e10",
   1: "0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c",
   5042: "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1"
 };
 
-export const cctpxRoute = (t, symbol, decimals, src, dst, defaultFast) => ({
+function tokenOn(book: TokenBook, id: ChainId, symbol: string): string {
+  const address = book[id];
+  if (!address) throw new Error(`No ${symbol} address on chain ${id}.`);
+  return address;
+}
+
+export const cctpxRoute = (
+  t: TokenBook,
+  symbol: string,
+  decimals: number,
+  src: ChainId,
+  dst: ChainId,
+  defaultFast: boolean
+): Route => ({
   kind: "cctpx",
   symbol,
   decimals,
   tokenId: t.tokenId,
   tokenManager: t.manager,
-  src: { chainId: src, domain: chain(src).domain, token: t[src] },
-  dst: { chainId: dst, domain: chain(dst).domain, token: t[dst] },
+  src: { chainId: src, domain: chain(src).domain, token: tokenOn(t, src, symbol) },
+  dst: { chainId: dst, domain: chain(dst).domain, token: tokenOn(t, dst, symbol) },
   defaultFast,
   defaultSelfMint: true
 });
@@ -135,7 +203,9 @@ export const ROUTES = {
     canWrap: true
   },
   weth_arc_eth: cctpxRoute(WETH, "WETH", 18, 5042, 1, false)
-};
+} satisfies Record<string, Route>;
+
+export type RouteKey = keyof typeof ROUTES;
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 // Anything this app treats as a contract is not a wallet. Tokens sent there are lost.
@@ -149,10 +219,10 @@ export const NOT_A_RECIPIENT = new Set(
   ].map((a) => a.toLowerCase())
 );
 
-const arcUsdc = (r) => r.kind === "usdc" && r.src.chainId === 5042;
+const arcUsdc = (r: Route): boolean => r.kind === "usdc" && r.src.chainId === 5042;
 
 // Whole and fractional units, with trailing zeros stripped. "1" and "0.5", never "1.0".
-function formatUnits(amount, decimals) {
+function formatUnits(amount: bigint, decimals: number): string {
   const base = 10n ** BigInt(decimals);
   const whole = amount / base;
   const frac = (amount % base).toString().padStart(decimals, "0").replace(/0+$/, "");
@@ -160,10 +230,10 @@ function formatUnits(amount, decimals) {
 }
 
 // Amount MAX and connect leave behind. Zero except on Arc USDC.
-export const maxFillReserve = (r) => (arcUsdc(r) ? ARC_MAX_RESERVE : 0n);
+export const maxFillReserve = (r: Route): bigint => (arcUsdc(r) ? ARC_MAX_RESERVE : 0n);
 
 // Clause the MAX log appends. Empty when MAX holds nothing back.
-export function maxFillSuffix(r) {
+export function maxFillSuffix(r: Route): string {
   const reserve = maxFillReserve(r);
   if (reserve === 0n) return "";
   const left = formatUnits(reserve, r.decimals);
@@ -172,7 +242,7 @@ export function maxFillSuffix(r) {
 }
 
 // Sentence for the route blurb. Empty when MAX does not hold a reserve back.
-export function maxFillNote(r) {
+export function maxFillNote(r: Route): string {
   const reserve = maxFillReserve(r);
   if (reserve === 0n) return "";
   const name = CHAINS[r.src.chainId].name;
@@ -183,49 +253,74 @@ export function maxFillNote(r) {
 
 // Null when the balance covers the amount and the Arc spend floor.
 // Get fee and Send both call this. Callers do not add their own chain check.
-export function spendError(r, amount, bal) {
+export function spendError(r: Route, amount: bigint, bal: bigint): string | null {
   if (bal < amount) return `Not enough ${r.symbol}.`;
   if (arcUsdc(r) && bal - amount < ARC_SPEND_RESERVE) {
     const floor = formatUnits(ARC_SPEND_RESERVE, r.decimals);
-    const chain = CHAINS[r.src.chainId].name;
-    return `Keep at least ${floor} ${r.symbol} on ${chain} for gas (${r.symbol} is the gas token there).`;
+    const chainName = CHAINS[r.src.chainId].name;
+    return `Keep at least ${floor} ${r.symbol} on ${chainName} for gas (${r.symbol} is the gas token there).`;
   }
   return null;
 }
 
 // Locks depend on the route alone. USDC always self-mints. Its fast tier exists only from Ethereum.
-export const fastAllowed = (r) => r.kind !== "usdc" || r.src.chainId === 1;
-export const selfMintLocked = (r) => r.kind === "usdc";
+export const fastAllowed = (r: Route): boolean => r.kind !== "usdc" || r.src.chainId === 1;
+export const selfMintLocked = (r: Route): boolean => r.kind === "usdc";
+
+export interface ModeInput {
+  fast: boolean;
+  selfMint: boolean;
+}
+
+export interface TransferMode {
+  fast: boolean;
+  selfMint: boolean;
+}
 
 // Applies the checkbox values on top of the locks.
-export function transferMode(r, input) {
+export function transferMode(r: Route, input: ModeInput): TransferMode {
   return {
     fast: fastAllowed(r) && !!input.fast,
     selfMint: selfMintLocked(r) ? true : !!input.selfMint
   };
 }
 
-export const fastLabel = (r) =>
+export const fastLabel = (r: Route): string =>
   fastAllowed(r)
     ? "Fast transfer (small fee)"
     : "Fast transfer is not available for USDC except from Ethereum";
 
-export const routeLabel = (r) =>
+export const routeLabel = (r: Route): string =>
   `${r.symbol}: ${CHAINS[r.src.chainId].name} → ${CHAINS[r.dst.chainId].name}`;
 
-export const cleanLabel = (s) =>
+export const cleanLabel = (s: unknown): string =>
   String(s || "")
     .replace(/[^\p{L}\p{N} ._-]/gu, "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 24);
-export const badLabel = (s) => !s || /0x/i.test(s) || /wallet/i.test(s);
+export const badLabel = (s: string): boolean => !s || /0x/i.test(s) || /wallet/i.test(s);
+
+export interface AddressEntry {
+  label: string;
+  address: string;
+}
+
+export type EntryResult = { ok: true; entry: AddressEntry } | { ok: false; error: string };
+
+export interface EntryDraft {
+  address?: unknown;
+  label?: unknown;
+}
 
 // One shape either way: { ok: true, entry } or { ok: false, error }.
 // Callers branch on ok. A string is never an entry, and an entry is never an error.
 // Address and label come from the address book (typed in, or read back from localStorage).
-export function validEntry(e, getAddress) {
-  let address;
+export function validEntry(
+  e: EntryDraft | null | undefined,
+  getAddress: (address: string) => string
+): EntryResult {
+  let address: string;
   try {
     address = getAddress(String(e && e.address));
   } catch {
@@ -236,7 +331,7 @@ export function validEntry(e, getAddress) {
       ok: false,
       error: "this is a token or Circle contract, not a wallet. Tokens sent there are lost."
     };
-  const label = cleanLabel(e.label);
+  const label = cleanLabel(e && e.label);
   if (badLabel(label))
     return {
       ok: false,
@@ -246,7 +341,11 @@ export function validEntry(e, getAddress) {
 }
 
 // Circle's minimumFee is in basis points and may be fractional. Fast transfers keep 2x headroom.
-export function usdcMaxFee(amount, minimumFee, fast) {
+export function usdcMaxFee(
+  amount: bigint,
+  minimumFee: number | string | undefined,
+  fast: boolean
+): bigint {
   const feeBps = Number(minimumFee);
   if (!Number.isFinite(feeBps) || feeBps < 0 || feeBps > MAX_USDC_FEE_BPS)
     throw new Error(`Circle's fee looks wrong (${minimumFee} bps). Refusing to send.`);
@@ -254,13 +353,25 @@ export function usdcMaxFee(amount, minimumFee, fast) {
   return ((amount * hundredths + 999999n) / 1000000n) * (fast ? 2n : 1n);
 }
 
-export const cctpxFeeJumped = (oldFee, newFee) => newFee > (oldFee * 3n) / 2n + FEE_JUMP_SLACK;
+export const cctpxFeeJumped = (oldFee: bigint, newFee: bigint): boolean =>
+  newFee > (oldFee * 3n) / 2n + FEE_JUMP_SLACK;
 
-export function feeNeedsConfirm(chainId, fee) {
+export function feeNeedsConfirm(chainId: number, fee: bigint): boolean {
   return fee > chain(chainId).feeConfirm;
 }
 
-export function quoteStillMatches(quotedFor, next) {
+export interface QuoteSelection {
+  key: string;
+  amount: bigint;
+  to: string;
+  fast: boolean;
+  selfMint: boolean;
+}
+
+export function quoteStillMatches(
+  quotedFor: QuoteSelection | null | undefined,
+  next: QuoteSelection
+): boolean {
   if (!quotedFor) return false;
   return (
     quotedFor.key === next.key &&
