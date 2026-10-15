@@ -85,6 +85,9 @@ code {
   font-size: 12px;
   word-break: break-all;
 }
+.card:has(#log:empty) {
+  display: none;
+}
 #log {
   white-space: pre-wrap;
   font-family: ui-monospace, monospace;
