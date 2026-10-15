@@ -21,9 +21,8 @@
   <body>
     <h1>Circle CCTP Bridge</h1>
     <p class="sub">
-      Move USDC, EURC, cirBTC and WETH between Arc, Ethereum and Avalanche
-      through Circle's own contracts. Circle charges no protocol fee for
-      standard transfers. You pay only gas.
+      Move USDC, EURC, cirBTC and WETH between Arc, Ethereum and Avalanche through Circle's own
+      contracts. Circle charges no protocol fee for standard transfers. You pay only gas.
     </p>
 
     <div class="card">
@@ -40,19 +39,12 @@
       <details class="row">
         <summary>My other addresses (address book)</summary>
         <p class="warn">
-          Add only addresses you control. Copy them from your hardware wallet or
-          your wallet's address book, never from a transaction history: scammers
-          plant look-alike addresses there (address poisoning). Smart contract
-          wallets (for example a Safe) can have a different address, or no
-          deployment at all, on another network.
+          Add only addresses you control. Copy them from your hardware wallet or your wallet's
+          address book, never from a transaction history: scammers plant look-alike addresses there
+          (address poisoning). Smart contract wallets (for example a Safe) can have a different
+          address, or no deployment at all, on another network.
         </p>
-        <input
-          id="abAddr"
-          type="text"
-          placeholder="0x…"
-          autocomplete="off"
-          spellcheck="false"
-        />
+        <input id="abAddr" type="text" placeholder="0x…" autocomplete="off" spellcheck="false" />
         <div class="row">
           <input
             id="abLabel"
@@ -64,9 +56,7 @@
           <button id="abAdd" class="small">Add</button>
         </div>
         <div id="abList"></div>
-        <p class="muted">
-          The address book is stored only in this browser (localStorage).
-        </p>
+        <p class="muted">The address book is stored only in this browser (localStorage).</p>
       </details>
       <div class="row">
         <label>
@@ -76,9 +66,8 @@
       </div>
       <div class="row">
         <label
-          ><input id="selfMint" type="checkbox" /> I sign the mint on the
-          destination network myself (no forwarding fee, needs a little gas
-          there)</label
+          ><input id="selfMint" type="checkbox" /> I sign the mint on the destination network myself
+          (no forwarding fee, needs a little gas there)</label
         >
       </div>
     </div>
@@ -87,8 +76,8 @@
       <button id="connect">1. Connect wallet</button>
       <div class="row" id="acct"></div>
       <div class="row">
-        Amount: <input id="amt" type="text" size="18" autocomplete="off" />
-        <span id="sym"></span> <button id="max" class="small">MAX</button>
+        Amount: <input id="amt" type="text" size="18" autocomplete="off" /> <span id="sym"></span>
+        <button id="max" class="small">MAX</button>
       </div>
       <button id="wrap" disabled>Wrap ETH → WETH (entered amount)</button>
       <button id="quote" disabled>2. Get fee</button>
@@ -99,9 +88,9 @@
     <div class="card">
       <h2>Finish a pending transfer</h2>
       <p class="muted">
-        If you closed this page before the mint on the destination network, pick
-        the same route above, connect your wallet and paste the hash of the
-        transfer transaction on the source network.
+        If you closed this page before the mint on the destination network, pick the same route
+        above, connect your wallet and paste the hash of the transfer transaction on the source
+        network.
       </p>
       <input
         id="resumeHash"
@@ -116,10 +105,9 @@
     <div class="card"><div id="log"></div></div>
 
     <p class="muted">
-      ⚠️ Unaudited personal tool, provided as is. Use it entirely at your own
-      risk. The authors accept no liability for any loss of funds, bugs, misuse
-      or abuse. You are responsible for every transaction you sign. Test with a
-      small amount first. Docs: README.md.
+      ⚠️ Unaudited personal tool, provided as is. Use it entirely at your own risk. The authors
+      accept no liability for any loss of funds, bugs, misuse or abuse. You are responsible for
+      every transaction you sign. Test with a small amount first. Docs: README.md.
     </p>
   </body>
 </html>

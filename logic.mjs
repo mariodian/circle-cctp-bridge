@@ -29,7 +29,7 @@ export const CHAINS = {
     rpc: "https://ethereum-rpc.publicnode.com",
     native: "ETH",
     explorer: "https://etherscan.io/tx/",
-    feeConfirm: (3n * E18) / 1_000n, // 0.003 ETH
+    feeConfirm: (3n * E18) / 1_000n // 0.003 ETH
   },
   5042: {
     name: "Arc",
@@ -44,8 +44,8 @@ export const CHAINS = {
       chainName: "Arc",
       rpcUrls: ["https://rpc.mainnet.arc.io"],
       nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-      blockExplorerUrls: ["https://explorer.arc.io"],
-    },
+      blockExplorerUrls: ["https://explorer.arc.io"]
+    }
   },
   43114: {
     name: "Avalanche",
@@ -60,9 +60,9 @@ export const CHAINS = {
       chainName: "Avalanche C-Chain",
       rpcUrls: ["https://api.avax.network/ext/bc/C/rpc"],
       nativeCurrency: { name: "AVAX", symbol: "AVAX", decimals: 18 },
-      blockExplorerUrls: ["https://snowtrace.io"],
-    },
-  },
+      blockExplorerUrls: ["https://snowtrace.io"]
+    }
+  }
 };
 
 // One record owns the name, the Circle domain, and the fee-confirmation threshold.
@@ -77,7 +77,7 @@ function chain(id) {
 export const USDC = {
   1: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
   5042: "0x3600000000000000000000000000000000000000",
-  43114: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+  43114: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E"
 };
 
 export const usdcRoute = (src, dst, defaultFast) => ({
@@ -88,26 +88,26 @@ export const usdcRoute = (src, dst, defaultFast) => ({
   dst: { chainId: dst, domain: chain(dst).domain, token: USDC[dst] },
   tokenManager: TOKEN_MESSENGER_V2,
   defaultFast,
-  defaultSelfMint: true,
+  defaultSelfMint: true
 });
 
 export const WETH = {
   tokenId: "0x5c2cf12eccf48ab63313169ce192dc00af7c37a58bbc546ba4becf54df4962ea",
   manager: "0x8b86d0a92d779bbcc3208a98df0ab1926b3ac4dd",
   1: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-  5042: "0x128cC466B61f542da60c70e3aA11c10e19B84EDB",
+  5042: "0x128cC466B61f542da60c70e3aA11c10e19B84EDB"
 };
 export const CIRBTC = {
   tokenId: "0x3d26699fb5d40190fc3fa0dcbc1cd24e558355043c1997572ff9fd6efbb3fdca",
   manager: "0xa1db0fda2d1bfebe2e5701fe73b252bc2b25700e",
   1: "0x72DFB2E44f59C5AD2bAFE84314E5b99a7cd5075E",
-  5042: "0x171A4217b86A807A64eB94757Db6849fb4bDbAA0",
+  5042: "0x171A4217b86A807A64eB94757Db6849fb4bDbAA0"
 };
 export const EURC = {
   tokenId: "0x6ca9e29fa53becc29becaf4a90b9ca7a995ad4d2234880da13ca38c657fb241c",
   manager: "0x8c27579e24f9f19d96724e19fc059dacd1469e10",
   1: "0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c",
-  5042: "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1",
+  5042: "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1"
 };
 
 export const cctpxRoute = (t, symbol, decimals, src, dst, defaultFast) => ({
@@ -119,7 +119,7 @@ export const cctpxRoute = (t, symbol, decimals, src, dst, defaultFast) => ({
   src: { chainId: src, domain: chain(src).domain, token: t[src] },
   dst: { chainId: dst, domain: chain(dst).domain, token: t[dst] },
   defaultFast,
-  defaultSelfMint: true,
+  defaultSelfMint: true
 });
 
 export const ROUTES = {
@@ -132,9 +132,9 @@ export const ROUTES = {
   cirbtc_arc_eth: cctpxRoute(CIRBTC, "cirBTC", 8, 5042, 1, false),
   weth_eth_arc: {
     ...cctpxRoute(WETH, "WETH", 18, 1, 5042, true),
-    canWrap: true,
+    canWrap: true
   },
-  weth_arc_eth: cctpxRoute(WETH, "WETH", 18, 5042, 1, false),
+  weth_arc_eth: cctpxRoute(WETH, "WETH", 18, 5042, 1, false)
 };
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -145,12 +145,8 @@ export const NOT_A_RECIPIENT = new Set(
     TOKEN_MINTER_V2,
     MESSAGE_TRANSMITTER,
     ZERO,
-    ...Object.values(ROUTES).flatMap((r) => [
-      r.src.token,
-      r.dst.token,
-      r.tokenManager,
-    ]),
-  ].map((a) => a.toLowerCase()),
+    ...Object.values(ROUTES).flatMap((r) => [r.src.token, r.dst.token, r.tokenManager])
+  ].map((a) => a.toLowerCase())
 );
 
 const arcUsdc = (r) => r.kind === "usdc" && r.src.chainId === 5042;
@@ -205,7 +201,7 @@ export const selfMintLocked = (r) => r.kind === "usdc";
 export function transferMode(r, input) {
   return {
     fast: fastAllowed(r) && !!input.fast,
-    selfMint: selfMintLocked(r) ? true : !!input.selfMint,
+    selfMint: selfMintLocked(r) ? true : !!input.selfMint
   };
 }
 
@@ -238,15 +234,13 @@ export function validEntry(e, getAddress) {
   if (NOT_A_RECIPIENT.has(address.toLowerCase()))
     return {
       ok: false,
-      error:
-        "this is a token or Circle contract, not a wallet. Tokens sent there are lost.",
+      error: "this is a token or Circle contract, not a wallet. Tokens sent there are lost."
     };
   const label = cleanLabel(e.label);
   if (badLabel(label))
     return {
       ok: false,
-      error:
-        'enter a short label with letters or digits only (no addresses, not "wallet").',
+      error: 'enter a short label with letters or digits only (no addresses, not "wallet").'
     };
   return { ok: true, entry: { label, address } };
 }
@@ -255,15 +249,12 @@ export function validEntry(e, getAddress) {
 export function usdcMaxFee(amount, minimumFee, fast) {
   const feeBps = Number(minimumFee);
   if (!Number.isFinite(feeBps) || feeBps < 0 || feeBps > MAX_USDC_FEE_BPS)
-    throw new Error(
-      `Circle's fee looks wrong (${minimumFee} bps). Refusing to send.`,
-    );
+    throw new Error(`Circle's fee looks wrong (${minimumFee} bps). Refusing to send.`);
   const hundredths = BigInt(Math.ceil(feeBps * 100));
   return ((amount * hundredths + 999999n) / 1000000n) * (fast ? 2n : 1n);
 }
 
-export const cctpxFeeJumped = (oldFee, newFee) =>
-  newFee > (oldFee * 3n) / 2n + FEE_JUMP_SLACK;
+export const cctpxFeeJumped = (oldFee, newFee) => newFee > (oldFee * 3n) / 2n + FEE_JUMP_SLACK;
 
 export function feeNeedsConfirm(chainId, fee) {
   return fee > chain(chainId).feeConfirm;

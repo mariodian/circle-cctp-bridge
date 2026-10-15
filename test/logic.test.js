@@ -36,7 +36,7 @@ import {
   maxFillReserve,
   maxFillSuffix,
   usdcRoute,
-  validEntry,
+  validEntry
 } from "../logic.mjs";
 
 const WALLET = "0x1111111111111111111111111111111111111111";
@@ -61,8 +61,8 @@ test("validEntry accepts a labelled wallet and rejects the rest", () => {
     ok: true,
     entry: {
       label: "Cold storage",
-      address: ethers.getAddress(WALLET),
-    },
+      address: ethers.getAddress(WALLET)
+    }
   });
 
   const reject = (e) => {
@@ -77,17 +77,13 @@ test("validEntry accepts a labelled wallet and rejects the rest", () => {
   expect(
     reject({
       label: "Cold",
-      address: "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAED",
-    }),
+      address: "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAED"
+    })
   ).toMatch(/checksum/);
   expect(reject({ label: "Nope", address: USDC[1] })).toMatch(/Circle contract/);
-  expect(reject({ label: "Nope", address: TOKEN_MESSENGER_V2 })).toMatch(
-    /Circle contract/,
-  );
+  expect(reject({ label: "Nope", address: TOKEN_MESSENGER_V2 })).toMatch(/Circle contract/);
   expect(reject({ label: "Nope", address: CCTS })).toMatch(/Circle contract/);
-  expect(reject({ label: "Nope", address: ethers.ZeroAddress })).toMatch(
-    /Circle contract/,
-  );
+  expect(reject({ label: "Nope", address: ethers.ZeroAddress })).toMatch(/Circle contract/);
 });
 
 test("Arc MAX reserve is 1 USDC, and only on USDC routes", () => {
@@ -100,7 +96,7 @@ test("Arc MAX reserve is 1 USDC, and only on USDC routes", () => {
   expect(maxFillReserve(ROUTES.weth_arc_eth)).toBe(0n);
   expect(maxFillReserve(ROUTES.cirbtc_arc_eth)).toBe(0n);
   expect(maxFillNote(ROUTES.usdc_arc_eth)).toBe(
-    "MAX leaves 1 USDC on Arc for gas. Send keeps at least 0.5 USDC.",
+    "MAX leaves 1 USDC on Arc for gas. Send keeps at least 0.5 USDC."
   );
   expect(maxFillNote(ROUTES.usdc_eth_arc)).toBe("");
   expect(maxFillNote(ROUTES.eurc_arc_eth)).toBe("");
@@ -115,7 +111,7 @@ test("spendError covers the amount and the Arc spend floor", () => {
   expect(spendError(arc, amount, amount + ARC_MAX_RESERVE)).toBeNull();
   expect(spendError(arc, amount, amount + ARC_SPEND_RESERVE)).toBeNull();
   expect(spendError(arc, amount, amount + ARC_SPEND_RESERVE - 1n)).toBe(
-    "Keep at least 0.5 USDC on Arc for gas (USDC is the gas token there).",
+    "Keep at least 0.5 USDC on Arc for gas (USDC is the gas token there)."
   );
   expect(spendError(arc, amount, amount - 1n)).toBe("Not enough USDC.");
   expect(spendError(ROUTES.eurc_arc_eth, 1n, 0n)).toBe("Not enough EURC.");
@@ -135,7 +131,7 @@ test("transfer mode locks USDC self-mint and fast off Ethereum", () => {
   expect(weth).toEqual({ fast: true, selfMint: false });
   expect(fastLabel(ROUTES.usdc_eth_arc)).toBe("Fast transfer (small fee)");
   expect(fastLabel(ROUTES.usdc_av_arc)).toBe(
-    "Fast transfer is not available for USDC except from Ethereum",
+    "Fast transfer is not available for USDC except from Ethereum"
   );
   expect(fastLabel(ROUTES.weth_arc_eth)).toBe("Fast transfer (small fee)");
   expect(finality(true)).toBe(FINALITY_FAST);
@@ -187,14 +183,12 @@ test("a quote matches only the same route, amount, recipient, and mode", () => {
     amount: 5n,
     to: WALLET,
     fast: true,
-    selfMint: true,
+    selfMint: true
   };
   expect(quoteStillMatches(quoted, { ...quoted })).toBe(true);
   expect(quoteStillMatches(null, quoted)).toBe(false);
   expect(quoteStillMatches(quoted, { ...quoted, amount: 6n })).toBe(false);
-  expect(quoteStillMatches(quoted, { ...quoted, key: "usdc_arc_eth" })).toBe(
-    false,
-  );
+  expect(quoteStillMatches(quoted, { ...quoted, key: "usdc_arc_eth" })).toBe(false);
   expect(quoteStillMatches(quoted, { ...quoted, to: USDC[1] })).toBe(false);
   expect(quoteStillMatches(quoted, { ...quoted, fast: false })).toBe(false);
   expect(quoteStillMatches(quoted, { ...quoted, selfMint: false })).toBe(false);
@@ -218,12 +212,7 @@ test("every route points at a known domain, token, and manager", () => {
       expect(NOT_A_RECIPIENT.has(a.toLowerCase())).toBe(true);
     expect(routeLabel(r)).toContain(r.symbol + ": ");
   }
-  for (const a of [
-    CCTS,
-    TOKEN_MINTER_V2,
-    MESSAGE_TRANSMITTER,
-    ethers.ZeroAddress,
-  ])
+  for (const a of [CCTS, TOKEN_MINTER_V2, MESSAGE_TRANSMITTER, ethers.ZeroAddress])
     expect(NOT_A_RECIPIENT.has(a.toLowerCase())).toBe(true);
   expect(routeLabel(ROUTES.usdc_av_arc)).toBe("USDC: Avalanche → Arc");
   expect(routeLabel(ROUTES.weth_arc_eth)).toBe("WETH: Arc → Ethereum");

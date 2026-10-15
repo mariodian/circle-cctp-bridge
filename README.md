@@ -15,17 +15,17 @@ Background: [How to live off a crypto loan, chapter 2.10](https://liberation.tra
 
 ## Routes
 
-| Route | Protocol | Typical time |
-|---|---|---|
-| USDC: Avalanche → Arc | CCTP V2 | seconds |
-| USDC: Avalanche → Ethereum | CCTP V2 | seconds |
-| USDC: Ethereum → Arc | CCTP V2 | ~15–20 min standard, or seconds with "fast" (small fee) |
-| USDC: Arc → Ethereum | CCTP V2 | seconds |
-| EURC: Arc → Ethereum | CCTPx | seconds to minutes |
-| cirBTC: Ethereum → Arc | CCTPx | ~15–20 min standard, or faster with "fast" |
-| cirBTC: Arc → Ethereum | CCTPx | seconds to minutes |
-| WETH: Ethereum → Arc | CCTPx (with optional ETH → WETH wrap) | ~15–20 min standard, or faster with "fast" |
-| WETH: Arc → Ethereum | CCTPx | seconds to minutes |
+| Route                      | Protocol                              | Typical time                                            |
+| -------------------------- | ------------------------------------- | ------------------------------------------------------- |
+| USDC: Avalanche → Arc      | CCTP V2                               | seconds                                                 |
+| USDC: Avalanche → Ethereum | CCTP V2                               | seconds                                                 |
+| USDC: Ethereum → Arc       | CCTP V2                               | ~15–20 min standard, or seconds with "fast" (small fee) |
+| USDC: Arc → Ethereum       | CCTP V2                               | seconds                                                 |
+| EURC: Arc → Ethereum       | CCTPx                                 | seconds to minutes                                      |
+| cirBTC: Ethereum → Arc     | CCTPx                                 | ~15–20 min standard, or faster with "fast"              |
+| cirBTC: Arc → Ethereum     | CCTPx                                 | seconds to minutes                                      |
+| WETH: Ethereum → Arc       | CCTPx (with optional ETH → WETH wrap) | ~15–20 min standard, or faster with "fast"              |
+| WETH: Arc → Ethereum       | CCTPx                                 | seconds to minutes                                      |
 
 The time is mostly Circle's attestation. Transfers that start on Ethereum wait for Ethereum finality unless you choose "fast".
 
@@ -103,21 +103,21 @@ Circle applies per-transfer limits, for example at most 9 cirBTC per transfer at
 
 The Circle contracts have the same address on Ethereum, Arc and Avalanche:
 
-| Contract | Address |
-|---|---|
+| Contract                | Address                                      |
+| ----------------------- | -------------------------------------------- |
 | TokenMessengerV2 (USDC) | `0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d` |
-| TokenMinterV2 | `0xfd78EE919681417d192449715b2594ab58f5D002` |
-| MessageTransmitterV2 | `0x81D40F21F12A8F0E3252Bccb954D722d4c464B64` |
-| CrossChainTokenService | `0x431871229103b780868f8C6BB820cd16ECf942BC` |
+| TokenMinterV2           | `0xfd78EE919681417d192449715b2594ab58f5D002` |
+| MessageTransmitterV2    | `0x81D40F21F12A8F0E3252Bccb954D722d4c464B64` |
+| CrossChainTokenService  | `0x431871229103b780868f8C6BB820cd16ECf942BC` |
 
 Tokens:
 
-| Token | Ethereum | Arc | Avalanche |
-|---|---|---|---|
-| USDC | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` | `0x3600000000000000000000000000000000000000` (ERC-20 interface of native USDC) | `0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E` (native, not USDC.e) |
-| EURC | `0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c` | `0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1` | – |
-| cirBTC | `0x72DFB2E44f59C5AD2bAFE84314E5b99a7cd5075E` | `0x171A4217b86A807A64eB94757Db6849fb4bDbAA0` | – |
-| WETH | `0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2` | `0x128cC466B61f542da60c70e3aA11c10e19B84EDB` | – |
+| Token  | Ethereum                                     | Arc                                                                            | Avalanche                                                         |
+| ------ | -------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| USDC   | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` | `0x3600000000000000000000000000000000000000` (ERC-20 interface of native USDC) | `0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E` (native, not USDC.e) |
+| EURC   | `0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c` | `0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1`                                   | –                                                                 |
+| cirBTC | `0x72DFB2E44f59C5AD2bAFE84314E5b99a7cd5075E` | `0x171A4217b86A807A64eB94757Db6849fb4bDbAA0`                                   | –                                                                 |
+| WETH   | `0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2` | `0x128cC466B61f542da60c70e3aA11c10e19B84EDB`                                   | –                                                                 |
 
 Fake cirBTC tokens circulate on Arc, so compare the address before you trade or bridge.
 
