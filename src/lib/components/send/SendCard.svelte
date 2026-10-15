@@ -138,7 +138,7 @@
 
     <div class="flex flex-col gap-4">
       <div class="flex items-center justify-between gap-4">
-        <Label for="fast">Speed</Label>
+        <Label for="fast">Fast transfer</Label>
         <div class="flex items-center gap-2">
           <span class="text-sm">Fast</span>
           <Switch id="fast" disabled={bridge.fastLocked} bind:checked={bridge.fast} />
@@ -146,12 +146,13 @@
       </div>
       <p class="text-muted-foreground -mt-2 text-xs" id="fastLabel">{bridge.fastText}</p>
       <div class="flex items-center justify-between gap-4">
-        <Label for="selfMint">Mint</Label>
+        <Label for="selfMint">Sign the mint</Label>
         <div class="flex items-center gap-2">
           <span class="text-sm">I sign</span>
           <Switch id="selfMint" disabled={bridge.selfMintDisabled} bind:checked={bridge.selfMint} />
         </div>
       </div>
+      <p class="text-muted-foreground -mt-2 text-xs" id="selfMintLabel">{bridge.selfMintText}</p>
     </div>
 
     <QuoteSummary />

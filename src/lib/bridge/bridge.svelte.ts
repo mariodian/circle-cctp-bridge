@@ -7,6 +7,7 @@ import {
   assetsOn,
   fastAllowed,
   fastLabel,
+  selfMintLabel,
   fillable,
   isChainId,
   isTxHash,
@@ -167,6 +168,7 @@ class Bridge {
   fastLocked = $derived(this.busy || !fastAllowed(this.route));
   selfMintDisabled = $derived(this.busy || selfMintLocked(this.route));
   fastText = $derived(fastLabel(this.route));
+  selfMintText = $derived(selfMintLabel(this.route));
   mode = $derived(transferMode(this.route, { fast: this.fast, selfMint: this.selfMint }));
   feeLoading = $derived(this.#fee.phase === "loading");
   approveOn = $derived.by(() => {

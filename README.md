@@ -53,7 +53,7 @@ Then open <http://127.0.0.1:8000> in a browser with **Rabby** or **MetaMask**. I
 4. **Approve** the exact amount, then **Send**.
 5. If you sign the mint yourself (the default), the page waits for Circle's attestation and then switches your wallet to the destination network. There you sign `receiveMessage`, the mint. You need a little gas on the destination network for that: ETH on Ethereum, USDC on Arc, AVAX on Avalanche.
 
-For EURC, cirBTC and WETH you can instead untick "I sign the mint myself". Circle then delivers the tokens for a forwarding fee, which you pay in the source network's gas token.
+For EURC, cirBTC and WETH you can instead turn off "Sign the mint". Circle then delivers the tokens for a forwarding fee, which you pay in the source network's gas token.
 
 **Closed the page before the mint?** The transfer is not lost. Open the page again, pick the same route, connect, and paste the source-chain transaction hash under **Finish a pending transfer**.
 

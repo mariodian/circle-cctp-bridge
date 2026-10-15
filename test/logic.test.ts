@@ -27,6 +27,7 @@ import {
   feeNeedsConfirm,
   fastAllowed,
   fastLabel,
+  selfMintLabel,
   finality,
   quoteStillMatches,
   routeLabel,
@@ -146,11 +147,15 @@ test("transfer mode locks USDC self-mint and fast off Ethereum", () => {
   expect(av).toEqual({ fast: false, selfMint: true });
   const weth = transferMode(ROUTES.weth_arc_eth, { fast: true, selfMint: false });
   expect(weth).toEqual({ fast: true, selfMint: false });
-  expect(fastLabel(ROUTES.usdc_eth_arc)).toBe("Fast transfer (small fee)");
-  expect(fastLabel(ROUTES.usdc_av_arc)).toBe(
-    "Fast transfer is not available for USDC except from Ethereum"
+  expect(fastLabel(ROUTES.usdc_eth_arc)).toBe("Small fee. Arrives sooner.");
+  expect(fastLabel(ROUTES.usdc_av_arc)).toBe("Only for USDC sent from Ethereum.");
+  expect(fastLabel(ROUTES.weth_arc_eth)).toBe("Small fee. Arrives sooner.");
+  expect(selfMintLabel(ROUTES.usdc_eth_arc)).toBe(
+    "Always on for USDC. You sign on the destination and pay a little gas there."
   );
-  expect(fastLabel(ROUTES.weth_arc_eth)).toBe("Fast transfer (small fee)");
+  expect(selfMintLabel(ROUTES.weth_arc_eth)).toBe(
+    "You sign on the destination and pay a little gas there. Off, Circle mints for a forwarding fee."
+  );
   expect(finality(true)).toBe(FINALITY_FAST);
   expect(finality(false)).toBe(FINALITY_STANDARD);
   for (const r of Object.values(ROUTES)) {

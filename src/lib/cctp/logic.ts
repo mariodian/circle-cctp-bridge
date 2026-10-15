@@ -362,9 +362,13 @@ export function transferMode(r: Route, input: TransferMode): TransferMode {
 }
 
 export const fastLabel = (r: Route): string =>
-  fastAllowed(r)
-    ? "Fast transfer (small fee)"
-    : "Fast transfer is not available for USDC except from Ethereum";
+  fastAllowed(r) ? "Small fee. Arrives sooner." : "Only for USDC sent from Ethereum.";
+
+// On: you sign receiveMessage and pay gas on the destination. Off: Circle forwards the mint.
+export const selfMintLabel = (r: Route): string =>
+  selfMintLocked(r)
+    ? "Always on for USDC. You sign on the destination and pay a little gas there."
+    : "You sign on the destination and pay a little gas there. Off, Circle mints for a forwarding fee.";
 
 export const routeLabel = (r: Route): string =>
   `${r.symbol}: ${CHAINS[r.src.chainId].name} → ${CHAINS[r.dst.chainId].name}`;
