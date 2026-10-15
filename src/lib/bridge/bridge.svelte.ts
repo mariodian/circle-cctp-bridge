@@ -1,4 +1,4 @@
-import type { BrowserProvider, JsonRpcSigner } from "ethers";
+import type { BrowserProvider, Eip1193Provider, JsonRpcSigner } from "ethers";
 import {
   CHAINS,
   ROUTES,
@@ -85,6 +85,7 @@ class Bridge {
 
   #provider: BrowserProvider | undefined;
   #signer: JsonRpcSigner | undefined;
+  #offWallet: (() => void) | undefined;
   // Displayed quote. #invalidateQuote owns every exit. #commit publishes a fetch. Send replaces body only.
   #fee = $state<FeeState>({ phase: "idle", note: "" });
   #feeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -130,7 +131,11 @@ class Bridge {
         this.#invalidateQuote();
       });
     });
-    import.meta.hot?.dispose(stop);
+    import.meta.hot?.dispose(() => {
+      stop();
+      this.#offWallet?.();
+    });
+    void this.#restore();
   }
 
   selectRecipient(key: string): void {
@@ -491,6 +496,103 @@ class Bridge {
   #ethereum(): NonNullable<Window["ethereum"]> {
     if (!window.ethereum) throw new Error("No wallet found in this browser (Rabby, MetaMask…).");
     return window.ethereum;
+  }
+
+  // Silent restore. eth_accounts returns an already-approved account and does not prompt.
+  async #restore(): Promise<void> {
+    const eth = window.ethereum;
+    if (!eth) return;
+    this.#listen(eth);
+    try {
+      const accounts = await eth.request({ method: "eth_accounts" });
+      if (this.busy || this.me) return;
+      if (!Array.isArray(accounts) || accounts.length === 0) return;
+      await this.#adopt(eth);
+    } catch (e) {
+      if (this.busy) return;
+      this.#clearSession();
+      this.log("ERROR: " + errorText(e));
+    }
+  }
+
+  #listen(eth: Eip1193Provider): void {
+    if (this.#offWallet) return;
+    const withEvents = eth as Eip1193Provider & {
+      on?: (event: string, cb: (...args: unknown[]) => void) => void;
+      removeListener?: (event: string, cb: (...args: unknown[]) => void) => void;
+    };
+    if (!withEvents.on || !withEvents.removeListener) return;
+    const onAccounts = (accounts: unknown) => {
+      void this.#onAccounts(accounts);
+    };
+    const onChain = () => {
+      void this.#onChain();
+    };
+    withEvents.on("accountsChanged", onAccounts);
+    withEvents.on("chainChanged", onChain);
+    this.#offWallet = () => {
+      withEvents.removeListener?.("accountsChanged", onAccounts);
+      withEvents.removeListener?.("chainChanged", onChain);
+    };
+  }
+
+  #clearSession(): void {
+    this.#me = undefined;
+    this.#provider = undefined;
+    this.#signer = undefined;
+    this.balanceText = "";
+  }
+
+  // Attach the current injected session. Never switches chain.
+  async #adopt(eth: Eip1193Provider): Promise<void> {
+    if (this.busy) return;
+    const provider = new (lib().BrowserProvider)(eth);
+    const net = await provider.getNetwork();
+    if (this.busy) return;
+    const signer = await provider.getSigner();
+    const who = await signer.getAddress();
+    if (this.busy) return;
+    this.#provider = provider;
+    this.#signer = signer;
+    this.#me = who;
+    if (Number(net.chainId) !== this.route.src.chainId) return;
+    await verifyRoute(this.route, provider);
+    if (this.busy || this.#provider !== provider) return;
+    const bal = await this.#refreshBalances();
+    if (this.busy || this.#provider !== provider) return;
+    if (!this.amount.trim())
+      this.amount = lib().formatUnits(
+        fillable(bal, maxFillReserve(this.route)),
+        this.route.decimals
+      );
+  }
+
+  async #onAccounts(accounts: unknown): Promise<void> {
+    if (this.busy) return;
+    const eth = window.ethereum;
+    if (!eth || !Array.isArray(accounts) || accounts.length === 0) {
+      this.#clearSession();
+      return;
+    }
+    try {
+      await this.#adopt(eth);
+    } catch (e) {
+      if (this.busy) return;
+      this.#clearSession();
+      this.log("ERROR: " + errorText(e));
+    }
+  }
+
+  async #onChain(): Promise<void> {
+    if (this.busy || !this.me) return;
+    const eth = window.ethereum;
+    if (!eth) return;
+    try {
+      await this.#adopt(eth);
+    } catch (e) {
+      if (this.busy) return;
+      this.log("ERROR: " + errorText(e));
+    }
   }
 
   #amountUnits(decimals = this.route.decimals): bigint {
