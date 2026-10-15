@@ -38,12 +38,12 @@ git clone https://github.com/wilderko/circle-cctp-bridge.git
 cd circle-cctp-bridge
 bun install
 bun run build
-python3 -m http.server 8000 --bind 127.0.0.1
+bun run preview -- --host 127.0.0.1 --port 8000
 ```
 
 Then open <http://127.0.0.1:8000> in a browser with **Rabby** or **MetaMask**. Ideally use a hardware wallet as the signer.
 
-`bun run build` writes `dist/app.js` and `dist/logic.js`. That folder is gitignored. Run the build again after you change `src/`. `bun test` covers the safety checks, and `bun run check` typechecks.
+`bun run dev` starts a local Vite server while you edit. `bun run build` writes the static site to `dist/`. That folder is gitignored. `bun test` covers the safety checks, and `bun run check` typechecks. The built page is the one that matches the Content-Security-Policy.
 
 ## How a transfer works
 
@@ -76,10 +76,10 @@ For EURC, cirBTC and WETH you can instead untick "I sign the mint myself". Circl
 - **Balance check.** Get fee and Send both refuse when the token balance cannot cover the amount. On Arc USDC, Send keeps at least 0.5 USDC for gas. MAX and the amount filled in on connect leave 1 USDC.
 - **Strict Content-Security-Policy.**
   - No inline scripts.
-  - Scripts load only from this folder and the pinned library.
+  - Scripts load only from this folder.
   - Network requests can go only to Circle's API and the three public RPC endpoints.
   - Wallet extensions such as Rabby and MetaMask still work.
-- **Pinned library.** ethers.js 6.13.2 is pinned with a Subresource Integrity hash.
+- **Pinned library.** ethers.js 6.13.2 is a direct dependency and is bundled into the page. There is no third-party script host.
 - **No embedding.** The page refuses to run inside a frame of another site (clickjacking).
 
 ### Good practice
@@ -130,13 +130,14 @@ Official references: [Circle CCTP docs](https://developers.circle.com/cctp), [CC
 
 ## Files
 
-- `index.html`: the page with its Content-Security-Policy.
-- `src/app.ts`: the page (wallet, address book, buttons). `bun run build` writes `dist/app.js`, which `index.html` loads.
-- `src/logic.ts`: the route catalog and the safety checks, covered by `bun test`. The build writes `dist/logic.js`.
+- `index.html`: the Vite shell and its Content-Security-Policy.
+- `src/App.svelte`, `src/RouteCard.svelte`, `src/TransferCard.svelte`, `src/ResumeCard.svelte`: the page.
+- `src/bridge.svelte.ts`: wallet, address book, and button actions.
+- `src/logic.ts`: the route catalog and the safety checks, covered by `bun test`.
 - `src/transfer.ts`: quotes, the burn and CCTPx send, and the mint watch.
 - `src/contracts.ts`: typed contract calls.
+- `src/app.css`: the styles.
 - `dist/`: the browser build. Git ignores it.
-- `style.css`: the styles.
 
 ## Adding a route
 

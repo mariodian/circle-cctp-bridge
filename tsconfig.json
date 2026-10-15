@@ -11,5 +11,6 @@
     "types": ["bun"],
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "test"]
+  "include": ["src", "test"],
+  "exclude": ["src/**/*.svelte", "src/**/*.svelte.ts"]
 }

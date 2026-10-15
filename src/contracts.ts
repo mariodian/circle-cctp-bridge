@@ -1,16 +1,15 @@
-// Typed calls over the ethers UMD build. The cast stays at this boundary.
+// Typed calls over the bundled ethers build. The cast stays at this boundary.
+import * as ethers from "ethers";
 import type { ContractRunner, Eip1193Provider } from "ethers";
 
 declare global {
   interface Window {
     ethereum?: Eip1193Provider;
-    ethers: typeof import("ethers");
   }
 }
 
-export function lib(): typeof import("ethers") {
-  if (!window.ethers) throw new Error("ethers.js failed to load.");
-  return window.ethers;
+export function lib(): typeof ethers {
+  return ethers;
 }
 
 // Wallet rejections and contract reverts expose shortMessage. Everything else is an Error or a string.
